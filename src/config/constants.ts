@@ -6,6 +6,7 @@ export const API_ENDPOINTS = {
   spotify: 'https://api.spotify.com/v1',
   appleMusic: 'https://api.music.apple.com/v1',
   youtube: 'https://www.googleapis.com/youtube/v3',
+  lastfm: 'https://ws.audioscrobbler.com/2.0/',
 } as const
 
 export const env = {
@@ -15,4 +16,5 @@ export const env = {
   supabaseAnonKey: import.meta.env.VITE_SUPABASE_ANON_KEY ?? '',
   appleMusicToken: import.meta.env.VITE_APPLE_MUSIC_TOKEN ?? '',
   youtubeApiKey: import.meta.env.VITE_YOUTUBE_API_KEY ?? '',
+  lastfmApiKey: import.meta.env.VITE_LASTFM_API_KEY ?? '',
 }
