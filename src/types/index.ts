@@ -41,11 +41,12 @@ export interface Track {
   title: string
   artist: string
   album?: string
-  durationMs: number
-  artworkUrl?: string
-  previewUrl?: string
-  source: MusicSource
+  duration: number
+  albumArt?: string
+  previewUrl: string | null
+  service: MusicSource
   externalUrl?: string
+  youtubeUrl?: string
 }
 
 export interface UserPreferences {
