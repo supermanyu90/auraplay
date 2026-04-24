@@ -12,4 +12,4 @@ export const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || ''
 
 export const YOUTUBE_DAILY_SEARCH_LIMIT = 100
 export const CACHE_DURATION_MS = 30 * 60 * 1000
-export const MAX_TRACKS = 25
+export const MAX_TRACKS = 10
