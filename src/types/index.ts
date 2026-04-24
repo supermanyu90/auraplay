@@ -58,10 +58,13 @@ export interface MusicResult {
   errors: string[]
 }
 
+export type PlaybackPreference = 'youtube' | 'apple-music'
+
 export interface UserPreferences {
   temperatureUnit: 'C' | 'F'
   theme: 'auto' | 'light' | 'dark'
   manualLocation?: string
+  playbackPreference: PlaybackPreference
 }
 
 export interface ListeningHistoryEntry {

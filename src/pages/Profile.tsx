@@ -1,23 +1,33 @@
 import { useState } from 'react'
-import { Check, ExternalLink, Trash2, X } from 'lucide-react'
+import {
+  Check,
+  Clock,
+  ExternalLink,
+  Info,
+  Trash2,
+  X,
+  Youtube,
+} from 'lucide-react'
 import {
   LASTFM_API_KEY,
-  OPENWEATHER_API_KEY,
   YOUTUBE_API_KEY,
   YOUTUBE_DAILY_SEARCH_LIMIT,
 } from '../config/constants'
 import { cacheClear } from '../utils/cache'
-import { getQuotaRemaining } from '../utils/quotaTracker'
+import { getQuotaUsed } from '../utils/quotaTracker'
 import { useMusicStore } from '../stores/musicStore'
 import { usePreferencesStore } from '../stores/preferencesStore'
 import { useWeatherStore } from '../stores/weatherStore'
+import type { PlaybackPreference } from '../types'
 
 export default function Profile() {
   const temperatureUnit = usePreferencesStore((s) => s.temperatureUnit)
   const theme = usePreferencesStore((s) => s.theme)
+  const playbackPreference = usePreferencesStore((s) => s.playbackPreference)
   const savedLocation = usePreferencesStore((s) => s.manualLocation)
   const setTemperatureUnit = usePreferencesStore((s) => s.setTemperatureUnit)
   const setTheme = usePreferencesStore((s) => s.setTheme)
+  const setPlaybackPreference = usePreferencesStore((s) => s.setPlaybackPreference)
   const setManualLocation = usePreferencesStore((s) => s.setManualLocation)
 
   const [locationInput, setLocationInput] = useState(savedLocation ?? '')
@@ -28,9 +38,8 @@ export default function Profile() {
 
   const lastfmConfigured = LASTFM_API_KEY.length > 0
   const youtubeConfigured = YOUTUBE_API_KEY.length > 0
-  const weatherConfigured = OPENWEATHER_API_KEY.length > 0
-  const allConfigured = lastfmConfigured && youtubeConfigured && weatherConfigured
-  const quotaRemaining = getQuotaRemaining()
+  const configuredCount = (lastfmConfigured ? 1 : 0) + (youtubeConfigured ? 1 : 0)
+  const quotaUsed = getQuotaUsed()
 
   const handleClearCache = () => {
     cacheClear('auraplay:')
@@ -55,39 +64,42 @@ export default function Profile() {
 
       <section aria-label="Connected services">
         <h2 className="text-lg font-semibold text-weather-cloudy-900 mb-3">Connected services</h2>
-        {allConfigured ? (
-          <p className="text-sm font-medium text-weather-windy-700 mb-3">All systems go ✓</p>
-        ) : (
-          <p className="text-sm text-weather-cloudy-700 mb-3">
-            Missing keys — see the README for setup instructions.
-          </p>
-        )}
         <ul className="space-y-2">
-          <ServiceRow
+          <ServiceCard
             label="Last.fm"
-            sublabel="Discovery Engine"
-            description="Finds songs matching your weather mood"
-            ok={lastfmConfigured}
+            sublabel="Recommendation Engine (Free)"
+            description="Powering your music discovery"
+            configured={lastfmConfigured}
           />
-          <ServiceRow
+          <ServiceCard
             label="YouTube Music"
-            sublabel="Playback"
+            sublabel="Primary Playback (Free)"
             description={
               youtubeConfigured
-                ? `${quotaRemaining}/${YOUTUBE_DAILY_SEARCH_LIMIT} searches left today`
+                ? `${quotaUsed}/${YOUTUBE_DAILY_SEARCH_LIMIT} searches used today`
                 : 'Needed for song playback'
             }
-            extra={youtubeConfigured ? 'Resets at midnight UTC' : undefined}
-            ok={youtubeConfigured}
-          />
-          <ServiceRow
-            label="OpenWeatherMap"
-            sublabel="Weather"
-            description="Detects ambient conditions"
-            ok={weatherConfigured}
+            extra={youtubeConfigured ? 'Resets daily at midnight UTC' : undefined}
+            configured={youtubeConfigured}
           />
         </ul>
       </section>
+
+      {configuredCount < 2 ? (
+        <section
+          aria-label="Setup guide"
+          className="rounded-2xl p-4 bg-weather-sunny-50/80 border border-weather-sunny-100 flex gap-3"
+        >
+          <Info className="w-5 h-5 text-weather-sunny-700 flex-none mt-0.5" aria-hidden="true" />
+          <div>
+            <p className="font-medium text-weather-cloudy-900">Finish setup</p>
+            <p className="text-sm text-weather-cloudy-700 mt-1">
+              Get the best experience by adding your API keys. See the README for a
+              step-by-step guide. At minimum, you need Last.fm + YouTube (both free).
+            </p>
+          </div>
+        </section>
+      ) : null}
 
       <section aria-label="Settings">
         <h2 className="text-lg font-semibold text-weather-cloudy-900 mb-3">Settings</h2>
@@ -97,12 +109,12 @@ export default function Profile() {
             description="Celsius or Fahrenheit"
             control={
               <div className="flex gap-1 p-1 rounded-full bg-weather-cloudy-100">
-                <UnitButton
+                <PillOption
                   selected={temperatureUnit === 'C'}
                   onClick={() => setTemperatureUnit('C')}
                   label="°C"
                 />
-                <UnitButton
+                <PillOption
                   selected={temperatureUnit === 'F'}
                   onClick={() => setTemperatureUnit('F')}
                   label="°F"
@@ -110,6 +122,33 @@ export default function Profile() {
               </div>
             }
           />
+
+          <div className="p-3 rounded-xl bg-white/70 border border-weather-cloudy-100">
+            <p className="font-medium text-weather-cloudy-900">Default playback</p>
+            <p className="text-xs text-weather-cloudy-700">Which service plays your tracks</p>
+            <div className="mt-3 space-y-2">
+              <PlaybackOption
+                value="youtube"
+                label="YouTube"
+                sublabel="Full songs"
+                selected={playbackPreference === 'youtube'}
+                onSelect={() => setPlaybackPreference('youtube')}
+              />
+              <PlaybackOption
+                value="apple-music"
+                label="Apple Music"
+                sublabel="30s previews"
+                badge="Coming soon"
+                selected={playbackPreference === 'apple-music'}
+                onSelect={() => setPlaybackPreference('apple-music')}
+              />
+            </div>
+            {playbackPreference === 'apple-music' ? (
+              <p className="mt-3 text-xs text-weather-cloudy-700">
+                Apple Music playback is coming soon. YouTube will be used in the meantime.
+              </p>
+            ) : null}
+          </div>
 
           <Row
             label="Theme"
@@ -158,8 +197,8 @@ export default function Profile() {
           </div>
 
           <Row
-            label="Clear cache"
-            description="Remove cached recommendations and weather"
+            label="Clear recommendation cache"
+            description="Remove cached tracks, weather, and YouTube search results"
             control={
               <button
                 type="button"
@@ -170,6 +209,22 @@ export default function Profile() {
               </button>
             }
           />
+
+          <div className="p-3 rounded-xl bg-white/70 border border-weather-cloudy-100 flex items-center gap-3">
+            <span
+              className="w-8 h-8 rounded-full bg-weather-rainy-100 text-weather-rainy-700 flex items-center justify-center flex-none"
+              aria-hidden="true"
+            >
+              <Clock className="w-4 h-4" />
+            </span>
+            <div className="flex-1 min-w-0">
+              <p className="font-medium text-weather-cloudy-900">YouTube quota</p>
+              <p className="text-xs text-weather-cloudy-700">
+                Resets daily at midnight UTC — {YOUTUBE_DAILY_SEARCH_LIMIT - quotaUsed} searches
+                remaining today
+              </p>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -198,32 +253,32 @@ export default function Profile() {
   )
 }
 
-interface ServiceRowProps {
+interface ServiceCardProps {
   label: string
   sublabel: string
   description: string
   extra?: string
-  ok: boolean
+  configured: boolean
 }
 
-function ServiceRow({ label, sublabel, description, extra, ok }: ServiceRowProps) {
+function ServiceCard({ label, sublabel, description, extra, configured }: ServiceCardProps) {
   return (
-    <li className="flex items-center gap-3 p-3 rounded-xl bg-white/70 border border-weather-cloudy-100">
+    <li className="flex items-start gap-3 p-4 rounded-xl bg-white/70 border border-weather-cloudy-100">
       <span
-        className={`w-8 h-8 rounded-full flex items-center justify-center flex-none ${
-          ok ? 'bg-weather-windy-500 text-white' : 'bg-weather-cloudy-300 text-white'
+        className={`w-10 h-10 rounded-full flex items-center justify-center flex-none ${
+          configured ? 'bg-weather-windy-500 text-white' : 'bg-weather-cloudy-300 text-white'
         }`}
         aria-hidden="true"
       >
-        {ok ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
+        {configured ? <Check className="w-5 h-5" /> : <X className="w-5 h-5" />}
       </span>
       <div className="flex-1 min-w-0">
-        <p className="font-medium text-weather-cloudy-900">
-          {label}
-          <span className="font-normal text-xs text-weather-cloudy-700 ml-2">{sublabel}</span>
-        </p>
-        <p className="text-xs text-weather-cloudy-700">{description}</p>
-        {extra ? <p className="text-[10px] text-weather-cloudy-700/70 mt-0.5">{extra}</p> : null}
+        <div className="flex items-baseline justify-between gap-2">
+          <p className="font-semibold text-weather-cloudy-900">{label}</p>
+          <span className="text-xs text-weather-cloudy-700 truncate">{sublabel}</span>
+        </div>
+        <p className="text-sm text-weather-cloudy-700 mt-0.5">{description}</p>
+        {extra ? <p className="text-[11px] text-weather-cloudy-700/70 mt-1">{extra}</p> : null}
       </div>
     </li>
   )
@@ -249,7 +304,7 @@ function Row({
   )
 }
 
-function UnitButton({
+function PillOption({
   selected,
   onClick,
   label,
@@ -262,12 +317,76 @@ function UnitButton({
     <button
       type="button"
       onClick={onClick}
+      aria-pressed={selected}
       className={`px-3 py-1 rounded-full text-sm transition-colors ${
         selected ? 'bg-weather-cloudy-900 text-white' : 'text-weather-cloudy-700'
       }`}
-      aria-pressed={selected}
     >
       {label}
     </button>
+  )
+}
+
+interface PlaybackOptionProps {
+  value: PlaybackPreference
+  label: string
+  sublabel: string
+  badge?: string
+  selected: boolean
+  onSelect: () => void
+}
+
+function PlaybackOption({
+  value,
+  label,
+  sublabel,
+  badge,
+  selected,
+  onSelect,
+}: PlaybackOptionProps) {
+  return (
+    <label
+      className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${
+        selected
+          ? 'bg-white border-weather-cloudy-300 shadow-sm'
+          : 'bg-white/40 border-weather-cloudy-100 hover:bg-white/70'
+      }`}
+    >
+      <input
+        type="radio"
+        name="playbackPreference"
+        value={value}
+        checked={selected}
+        onChange={onSelect}
+        className="sr-only"
+      />
+      <span
+        className={`w-5 h-5 rounded-full flex-none border-2 flex items-center justify-center transition-colors ${
+          selected ? 'border-weather-cloudy-900' : 'border-weather-cloudy-300'
+        }`}
+        aria-hidden="true"
+      >
+        {selected ? (
+          <span className="w-2.5 h-2.5 rounded-full bg-weather-cloudy-900" />
+        ) : null}
+      </span>
+      <span
+        className="w-9 h-9 rounded-lg bg-[#FF0000]/10 text-[#FF0000] flex items-center justify-center flex-none"
+        aria-hidden="true"
+      >
+        <Youtube className="w-4 h-4" strokeWidth={2.5} />
+      </span>
+      <span className="flex-1 min-w-0">
+        <span className="block font-medium text-weather-cloudy-900 flex items-center gap-2">
+          {label}
+          {badge ? (
+            <span className="text-[10px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-weather-cloudy-100 text-weather-cloudy-700">
+              {badge}
+            </span>
+          ) : null}
+        </span>
+        <span className="block text-xs text-weather-cloudy-700">{sublabel}</span>
+      </span>
+    </label>
   )
 }
