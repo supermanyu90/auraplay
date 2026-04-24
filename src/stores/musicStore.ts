@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { YOUTUBE_DAILY_SEARCH_LIMIT } from '../config/constants'
+import { loadVideo, pause, play } from '../hooks/useYouTubePlayer'
 import { getRecommendations } from '../services/musicService'
 import { getQuotaUsed } from '../utils/quotaTracker'
 import type { MoodProfile, Track, WeatherCondition } from '../types'
@@ -119,9 +120,11 @@ export const useMusicStore = create<MusicState>((set, get) => ({
 
   playTrack(index) {
     const { tracks } = get()
-    if (index >= 0 && index < tracks.length) {
-      set({ currentTrackIndex: index, isPlaying: true })
-    }
+    if (index < 0 || index >= tracks.length) return
+    const track = tracks[index]
+    set({ currentTrackIndex: index, isPlaying: true })
+    loadVideo(track.id)
+    play()
   },
 
   nextTrack() {
@@ -160,7 +163,9 @@ export const useMusicStore = create<MusicState>((set, get) => ({
   },
 
   togglePlayPause() {
-    set((state) => ({ isPlaying: !state.isPlaying }))
+    const { isPlaying } = get()
+    if (isPlaying) pause()
+    else play()
   },
 
   setIsPlaying(isPlaying) {

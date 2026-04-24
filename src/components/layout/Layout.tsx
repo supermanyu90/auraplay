@@ -9,7 +9,6 @@ import { NowPlaying } from '../music/NowPlaying'
 import { PlayerHost } from '../music/PlayerHost'
 import {
   loadVideo,
-  play,
   setOnPlayerError,
   setOnTrackEnded,
   useYouTubePlayer,
@@ -21,11 +20,10 @@ export default function Layout() {
 
   const tracks = useMusicStore((s) => s.tracks)
   const currentTrackIndex = useMusicStore((s) => s.currentTrackIndex)
-  const isPlayingIntent = useMusicStore((s) => s.isPlaying)
   const nextTrack = useMusicStore((s) => s.nextTrack)
   const setIsPlaying = useMusicStore((s) => s.setIsPlaying)
 
-  const { isReady, videoId, isPlaying: playerIsPlaying, hasUserInteracted } = useYouTubePlayer()
+  const { isReady, videoId, isPlaying: playerIsPlaying } = useYouTubePlayer()
 
   useEffect(() => {
     setOnTrackEnded(nextTrack)
@@ -43,13 +41,6 @@ export default function Layout() {
       loadVideo(track.id)
     }
   }, [currentTrackIndex, tracks, isReady, videoId])
-
-  useEffect(() => {
-    if (!isReady) return
-    if (isPlayingIntent && !playerIsPlaying && hasUserInteracted) {
-      play()
-    }
-  }, [isPlayingIntent, playerIsPlaying, isReady, hasUserInteracted])
 
   useEffect(() => {
     setIsPlaying(playerIsPlaying)
