@@ -1,5 +1,7 @@
 # AuraPlay
 
+Try it here: https://auraplay-qi8d.vercel.app/music
+
 **100% free. No subscriptions. No premium accounts.**
 
 Weather-based music discovery. AuraPlay reads the weather where you are, maps it to an audio mood, and builds a playlist from Last.fm recommendations played back through YouTube.
