@@ -4,10 +4,15 @@ import { getRecommendations } from '../services/musicService'
 import { getQuotaUsed } from '../utils/quotaTracker'
 import type { MoodProfile, Track, WeatherCondition } from '../types'
 
+export type RepeatMode = 'off' | 'all' | 'one'
+
 interface MusicState {
   tracks: Track[]
   currentTrackIndex: number | null
   isPlaying: boolean
+
+  shuffle: boolean
+  repeat: RepeatMode
 
   isLoading: boolean
   loadingMessage: string
@@ -27,6 +32,10 @@ interface MusicState {
   previousTrack: () => void
   togglePlayPause: () => void
   setIsPlaying: (isPlaying: boolean) => void
+  setShuffle: (value: boolean) => void
+  cycleRepeat: () => void
+  appendTrack: (track: Track) => void
+  setTrackDuration: (videoId: string, duration: number) => void
   clearTracks: () => void
 }
 
@@ -35,10 +44,20 @@ function toMessage(err: unknown): string {
   return 'Could not load music right now.'
 }
 
+function pickShuffledIndex(current: number, total: number): number {
+  if (total <= 1) return 0
+  let next = Math.floor(Math.random() * total)
+  if (next === current) next = (next + 1) % total
+  return next
+}
+
 export const useMusicStore = create<MusicState>((set, get) => ({
   tracks: [],
   currentTrackIndex: null,
   isPlaying: false,
+
+  shuffle: false,
+  repeat: 'off',
 
   isLoading: false,
   loadingMessage: '',
@@ -61,16 +80,25 @@ export const useMusicStore = create<MusicState>((set, get) => ({
       loadingMessage: 'Reading the weather...',
       error: null,
       warnings: [],
+      tracks: [],
+      currentTrackIndex: null,
     })
 
     try {
       const result = await getRecommendations(mood, {
         onProgress: (msg) => set({ loadingMessage: msg }),
+        onTrackFound: (track) => {
+          set((s) => ({
+            tracks: [...s.tracks, track],
+            currentTrackIndex: s.currentTrackIndex == null ? 0 : s.currentTrackIndex,
+          }))
+        },
       })
 
-      set({
-        tracks: result.tracks,
-        currentTrackIndex: result.tracks.length > 0 ? 0 : null,
+      set((s) => ({
+        tracks: result.tracks.length > 0 ? result.tracks : s.tracks,
+        currentTrackIndex:
+          (result.tracks.length > 0 ? result.tracks : s.tracks).length > 0 ? 0 : null,
         isLoading: false,
         loadingMessage: '',
         error: null,
@@ -78,7 +106,7 @@ export const useMusicStore = create<MusicState>((set, get) => ({
         youtubeQuotaUsed: result.quotaUsed,
         lastCondition: mood.condition,
         lastFetchedAt: Date.now(),
-      })
+      }))
     } catch (err) {
       set({
         error: toMessage(err),
@@ -97,15 +125,36 @@ export const useMusicStore = create<MusicState>((set, get) => ({
   },
 
   nextTrack() {
-    const { currentTrackIndex, tracks } = get()
-    if (currentTrackIndex != null && currentTrackIndex + 1 < tracks.length) {
+    const { currentTrackIndex, tracks, shuffle, repeat } = get()
+    if (currentTrackIndex == null || tracks.length === 0) return
+
+    if (repeat === 'one') {
+      set({ currentTrackIndex })
+      return
+    }
+
+    if (shuffle) {
+      set({ currentTrackIndex: pickShuffledIndex(currentTrackIndex, tracks.length) })
+      return
+    }
+
+    if (currentTrackIndex + 1 < tracks.length) {
       set({ currentTrackIndex: currentTrackIndex + 1 })
+    } else if (repeat === 'all') {
+      set({ currentTrackIndex: 0 })
+    } else {
+      set({ isPlaying: false })
     }
   },
 
   previousTrack() {
-    const { currentTrackIndex } = get()
-    if (currentTrackIndex != null && currentTrackIndex > 0) {
+    const { currentTrackIndex, tracks, shuffle } = get()
+    if (currentTrackIndex == null || tracks.length === 0) return
+    if (shuffle) {
+      set({ currentTrackIndex: pickShuffledIndex(currentTrackIndex, tracks.length) })
+      return
+    }
+    if (currentTrackIndex > 0) {
       set({ currentTrackIndex: currentTrackIndex - 1 })
     }
   },
@@ -116,6 +165,29 @@ export const useMusicStore = create<MusicState>((set, get) => ({
 
   setIsPlaying(isPlaying) {
     set({ isPlaying })
+  },
+
+  setShuffle(value) {
+    set({ shuffle: value })
+  },
+
+  cycleRepeat() {
+    set((state) => ({
+      repeat: state.repeat === 'off' ? 'all' : state.repeat === 'all' ? 'one' : 'off',
+    }))
+  },
+
+  appendTrack(track) {
+    set((state) => ({
+      tracks: [...state.tracks, track],
+      currentTrackIndex: state.currentTrackIndex == null ? 0 : state.currentTrackIndex,
+    }))
+  },
+
+  setTrackDuration(videoId, duration) {
+    set((state) => ({
+      tracks: state.tracks.map((t) => (t.id === videoId ? { ...t, duration } : t)),
+    }))
   },
 
   clearTracks() {

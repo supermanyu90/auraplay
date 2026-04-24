@@ -29,8 +29,8 @@ interface YouTubeSearchResponse {
 interface YouTubeVideoDetailsResponse {
   items: Array<{
     id: string
-    contentDetails: { duration: string }
-    statistics: { viewCount?: string }
+    contentDetails?: { duration: string }
+    statistics?: { viewCount?: string }
   }>
 }
 
@@ -102,11 +102,13 @@ export async function getVideoDetails(videoIds: string[]): Promise<VideoDetails[
       timeout: 8000,
     })
 
-    return data.items.map((item) => ({
-      id: item.id,
-      duration: item.contentDetails ? parseDuration(item.contentDetails.duration) : 0,
-      viewCount: Number(item.statistics?.viewCount ?? 0),
-    }))
+    return data.items
+      .filter((item) => item.contentDetails?.duration)
+      .map((item) => ({
+        id: item.id,
+        duration: parseDuration(item.contentDetails!.duration),
+        viewCount: Number(item.statistics?.viewCount ?? 0),
+      }))
   } catch (err) {
     if (isQuotaExceededError(err)) {
       console.warn('YouTube API quota exceeded; could not fetch video details.')
@@ -152,9 +154,15 @@ export async function searchTrack(title: string, artist: string): Promise<Track 
   }
 }
 
+export interface SearchBatchCallbacks {
+  onTrackFound?: (track: Track) => void
+  onDurationResolved?: (videoId: string, durationMs: number) => void
+}
+
 export async function searchBatch(
   sources: LastfmTrack[],
   maxResults = 20,
+  callbacks: SearchBatchCallbacks = {},
 ): Promise<{ tracks: Track[]; missing: number; quotaStopped: boolean }> {
   const limited = sources.slice(0, Math.min(maxResults, sources.length))
   const tracks: Track[] = []
@@ -200,6 +208,7 @@ export async function searchBatch(
       })
       tracks.push(track)
       needsDuration.push({ track, videoId })
+      callbacks.onTrackFound?.(track)
     } catch (err) {
       if (isQuotaExceededError(err)) {
         console.warn('YouTube API quota exceeded; stopping batch search.')
@@ -220,7 +229,10 @@ export async function searchBatch(
       const byId = new Map(details.map((d) => [d.id, d]))
       for (const { track, videoId } of needsDuration) {
         const info = byId.get(videoId)
-        if (info) track.duration = info.duration
+        if (info) {
+          track.duration = info.duration
+          callbacks.onDurationResolved?.(videoId, info.duration)
+        }
       }
     } catch (err) {
       console.warn('YouTube: batched details fetch failed:', err)

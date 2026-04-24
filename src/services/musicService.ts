@@ -11,6 +11,8 @@ const TRACKS_CACHE_PREFIX = 'auraplay:tracks:'
 
 export interface GetRecommendationsOptions {
   onProgress?: (message: string) => void
+  onTrackFound?: (track: Track) => void
+  onDurationResolved?: (videoId: string, durationMs: number) => void
 }
 
 function quotaSnapshot(): { used: number; remaining: number } {
@@ -29,6 +31,7 @@ export async function getRecommendations(
 
   const fresh = cacheGet<Track[]>(cacheKey)
   if (fresh && fresh.length > 0) {
+    for (const track of fresh) opts.onTrackFound?.(track)
     const q = quotaSnapshot()
     return {
       tracks: fresh,
@@ -42,6 +45,7 @@ export async function getRecommendations(
 
   if (isQuotaExceeded()) {
     const stale = cacheGetStale<Track[]>(cacheKey)
+    if (stale) for (const track of stale) opts.onTrackFound?.(track)
     const message =
       stale && stale.length > 0
         ? 'Daily search limit reached. Showing saved recommendations.'
@@ -73,7 +77,10 @@ export async function getRecommendations(
 
   if (deduped.length > 0) {
     onProgress('Searching YouTube...')
-    const result = await searchBatch(deduped, MAX_TRACKS)
+    const result = await searchBatch(deduped, MAX_TRACKS, {
+      onTrackFound: opts.onTrackFound,
+      onDurationResolved: opts.onDurationResolved,
+    })
     finalTracks = result.tracks
     if (result.missing > 0) {
       errors.push(`${result.missing} tracks not found on YouTube.`)
@@ -87,6 +94,7 @@ export async function getRecommendations(
       errors.push('Last.fm returned no tracks; falling back to YouTube genre search.')
     }
     finalTracks = await searchYouTubeByKeywords(mood.genres.slice(0, 2))
+    for (const track of finalTracks) opts.onTrackFound?.(track)
     if (finalTracks.length === 0) {
       errors.push('YouTube genre search returned nothing.')
     }
@@ -100,6 +108,7 @@ export async function getRecommendations(
     const stale = cacheGetStale<Track[]>(cacheKey)
     if (stale && stale.length > 0) {
       finalTracks = stale
+      for (const track of stale) opts.onTrackFound?.(track)
       errors.push('Live fetch failed; showing previously saved recommendations.')
     }
   }
