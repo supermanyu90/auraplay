@@ -1,13 +1,17 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Check,
   Clock,
   ExternalLink,
   Info,
+  LogIn,
+  LogOut,
   Trash2,
   X,
   Youtube,
 } from 'lucide-react'
+import type { User } from '@supabase/supabase-js'
 import {
   LASTFM_API_KEY,
   YOUTUBE_API_KEY,
@@ -15,6 +19,7 @@ import {
 } from '../config/constants'
 import { cacheClear } from '../utils/cache'
 import { getQuotaUsed } from '../utils/quotaTracker'
+import { useAuthStore } from '../stores/authStore'
 import { useMusicStore } from '../stores/musicStore'
 import { usePreferencesStore } from '../stores/preferencesStore'
 import { useWeatherStore } from '../stores/weatherStore'
@@ -58,9 +63,11 @@ export default function Profile() {
       <header>
         <h1 className="text-2xl md:text-3xl font-semibold text-weather-cloudy-900">Profile</h1>
         <p className="text-sm text-weather-cloudy-700 mt-1">
-          Service status, settings, and about.
+          Account, service status, settings, and about.
         </p>
       </header>
+
+      <AccountSection />
 
       <section aria-label="Connected services">
         <h2 className="text-lg font-semibold text-weather-cloudy-900 mb-3">Connected services</h2>
@@ -94,8 +101,8 @@ export default function Profile() {
           <div>
             <p className="font-medium text-weather-cloudy-900">Finish setup</p>
             <p className="text-sm text-weather-cloudy-700 mt-1">
-              Get the best experience by adding your API keys. See the README for a
-              step-by-step guide. At minimum, you need Last.fm + YouTube (both free).
+              Get the best experience by adding your API keys. See the README for a step-by-step
+              guide. At minimum, you need Last.fm + YouTube (both free).
             </p>
           </div>
         </section>
@@ -249,6 +256,99 @@ export default function Profile() {
           </p>
         </div>
       </section>
+    </div>
+  )
+}
+
+function AccountSection() {
+  const user = useAuthStore((s) => s.user)
+  const enabled = useAuthStore((s) => s.enabled)
+  const isReady = useAuthStore((s) => s.isReady)
+  const isLoading = useAuthStore((s) => s.isLoading)
+  const signOut = useAuthStore((s) => s.signOut)
+  const navigate = useNavigate()
+
+  if (!enabled) return null
+  if (!isReady) return null
+
+  if (user) {
+    return (
+      <section
+        aria-label="Account"
+        className="flex items-center gap-3 p-4 rounded-2xl bg-white/80 border border-weather-cloudy-100"
+      >
+        <UserAvatar user={user} />
+        <div className="flex-1 min-w-0">
+          <p className="font-semibold text-weather-cloudy-900 truncate">
+            {displayName(user) ?? 'Signed in'}
+          </p>
+          <p className="text-xs text-weather-cloudy-700 truncate">{user.email}</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => void signOut()}
+          disabled={isLoading}
+          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-weather-cloudy-100 text-sm text-weather-cloudy-900 hover:bg-weather-cloudy-300 disabled:opacity-50"
+        >
+          <LogOut className="w-4 h-4" aria-hidden="true" />
+          Sign out
+        </button>
+      </section>
+    )
+  }
+
+  return (
+    <section
+      aria-label="Account"
+      className="flex items-center gap-3 p-4 rounded-2xl bg-white/80 border border-weather-cloudy-100"
+    >
+      <div className="w-10 h-10 rounded-full bg-weather-cloudy-200 text-weather-cloudy-700 flex items-center justify-center flex-none">
+        <LogIn className="w-5 h-5" aria-hidden="true" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="font-semibold text-weather-cloudy-900">Sign in (optional)</p>
+        <p className="text-xs text-weather-cloudy-700">
+          Save listening history and preferences across devices.
+        </p>
+      </div>
+      <button
+        type="button"
+        onClick={() => navigate('/auth')}
+        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-weather-cloudy-900 text-white text-sm font-medium hover:scale-[1.02] transition-transform"
+      >
+        Sign in
+      </button>
+    </section>
+  )
+}
+
+function displayName(user: User): string | null {
+  const meta = user.user_metadata as Record<string, unknown> | undefined
+  const name = meta?.full_name ?? meta?.name
+  return typeof name === 'string' && name.length > 0 ? name : null
+}
+
+function UserAvatar({ user }: { user: User }) {
+  const meta = user.user_metadata as Record<string, unknown> | undefined
+  const avatarUrl = typeof meta?.avatar_url === 'string' ? (meta.avatar_url as string) : null
+  const initial = (user.email ?? '?').charAt(0).toUpperCase()
+
+  if (avatarUrl) {
+    return (
+      <img
+        src={avatarUrl}
+        alt=""
+        className="w-10 h-10 rounded-full object-cover flex-none"
+        referrerPolicy="no-referrer"
+      />
+    )
+  }
+  return (
+    <div
+      aria-hidden="true"
+      className="w-10 h-10 rounded-full bg-weather-rainy-500 text-white flex items-center justify-center font-semibold flex-none"
+    >
+      {initial}
     </div>
   )
 }
