@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { API_ENDPOINTS, env } from '../../config/constants'
+import { LASTFM_API_KEY, LASTFM_BASE_URL } from '../../config/constants'
 import type { MoodProfile } from '../../types'
 import { toLastfmTags } from '../../utils/lastfmTagMapping'
 
@@ -17,10 +17,10 @@ const CACHE_TTL_MS = 30 * 60 * 1000
 const RATE_LIMIT_DELAY_MS = 220
 
 function getApiKey(): string {
-  if (!env.lastfmApiKey) {
+  if (!LASTFM_API_KEY) {
     throw new Error('Last.fm API key is missing. Set VITE_LASTFM_API_KEY in .env.local')
   }
-  return env.lastfmApiKey
+  return LASTFM_API_KEY
 }
 
 interface LastfmErrorResponse {
@@ -30,7 +30,7 @@ interface LastfmErrorResponse {
 
 async function callLastfm<T>(params: Record<string, string | number>): Promise<T> {
   const apiKey = getApiKey()
-  const { data } = await axios.get<T | LastfmErrorResponse>(API_ENDPOINTS.lastfm, {
+  const { data } = await axios.get<T | LastfmErrorResponse>(LASTFM_BASE_URL, {
     params: { ...params, api_key: apiKey, format: 'json' },
     timeout: 8000,
   })
@@ -66,7 +66,7 @@ function cacheSet<T>(key: string, value: T): void {
     const entry: CacheEntry<T> = { value, expires: Date.now() + CACHE_TTL_MS }
     window.localStorage.setItem(CACHE_PREFIX + key, JSON.stringify(entry))
   } catch {
-    // quota exceeded or storage unavailable — ignore
+    // ignore
   }
 }
 

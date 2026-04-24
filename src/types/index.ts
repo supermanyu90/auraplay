@@ -1,5 +1,3 @@
-export type MusicSource = 'spotify' | 'apple' | 'youtube'
-
 export type WeatherCondition =
   | 'sunny'
   | 'cloudy'
@@ -40,21 +38,30 @@ export interface Track {
   id: string
   title: string
   artist: string
-  album?: string
+  album: string
+  albumArt: string
   duration: number
-  albumArt?: string
-  previewUrl: string | null
-  service: MusicSource
-  externalUrl?: string
-  youtubeUrl?: string
+  youtubeUrl: string
+  youtubeMusicUrl: string
+  lastfmUrl: string
+  playcount: number
+  tags: string[]
+  service: 'youtube'
+}
+
+export interface MusicResult {
+  tracks: Track[]
+  source: 'lastfm+youtube'
+  fromCache: boolean
+  quotaUsed: number
+  quotaRemaining: number
+  errors: string[]
 }
 
 export interface UserPreferences {
-  favoriteGenres: string[]
-  preferredSources: MusicSource[]
-  autoPlay: boolean
-  volume: number
+  temperatureUnit: 'C' | 'F'
   theme: 'auto' | 'light' | 'dark'
+  manualLocation?: string
 }
 
 export interface ListeningHistoryEntry {
@@ -64,11 +71,4 @@ export interface ListeningHistoryEntry {
   durationListenedMs: number
   weather?: WeatherData
   mood?: MoodProfile
-}
-
-export interface MusicRecommendationResult {
-  tracks: Track[]
-  mood: MoodProfile
-  cachedAt: number
-  errors: Array<{ source: MusicSource; message: string }>
 }

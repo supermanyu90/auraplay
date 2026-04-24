@@ -1,112 +1,11 @@
 import axios from 'axios'
-import { API_ENDPOINTS, env } from '../../config/constants'
+import { YOUTUBE_API_KEY, YOUTUBE_BASE_URL } from '../../config/constants'
 import type { Track } from '../../types'
 import type { LastfmTrack } from '../lastfm/lastfmApi'
 import { cleanChannelName, parseDuration, parseYouTubeTitle } from '../../utils/youtubeCleanup'
+import { addQuotaUsage, isQuotaExceeded } from '../../utils/quotaTracker'
 
-const CACHE_PREFIX = 'auraplay:youtube:'
-const CACHE_TTL_MS = 60 * 60 * 1000
-
-const QUOTA_LIMIT = 10_000
-const QUOTA_WARN_THRESHOLD = 0.8
-const QUOTA_KEY = 'auraplay:youtube:quota'
-const SEARCH_COST = 100
-const DETAILS_COST_PER_ID = 1
 const SEARCH_DELAY_MS = 200
-
-function todayKey(): string {
-  return new Date().toISOString().slice(0, 10)
-}
-
-interface QuotaState {
-  date: string
-  used: number
-}
-
-function readQuotaState(): QuotaState {
-  try {
-    const raw = window.localStorage.getItem(QUOTA_KEY)
-    if (!raw) return { date: todayKey(), used: 0 }
-    const state = JSON.parse(raw) as QuotaState
-    if (state.date !== todayKey()) return { date: todayKey(), used: 0 }
-    return state
-  } catch {
-    return { date: todayKey(), used: 0 }
-  }
-}
-
-function writeQuotaState(state: QuotaState): void {
-  try {
-    window.localStorage.setItem(QUOTA_KEY, JSON.stringify(state))
-  } catch {
-    // storage unavailable — ignore
-  }
-}
-
-function recordQuotaUse(units: number): void {
-  const before = readQuotaState()
-  const after: QuotaState = { date: todayKey(), used: before.used + units }
-  writeQuotaState(after)
-  const warnAt = QUOTA_LIMIT * QUOTA_WARN_THRESHOLD
-  if (after.used >= warnAt && before.used < warnAt) {
-    console.warn(
-      `YouTube API: ${Math.round((after.used / QUOTA_LIMIT) * 100)}% of daily quota used (${after.used}/${QUOTA_LIMIT})`,
-    )
-  }
-}
-
-export function getQuotaUsage(): { used: number; limit: number; percent: number } {
-  const state = readQuotaState()
-  return { used: state.used, limit: QUOTA_LIMIT, percent: state.used / QUOTA_LIMIT }
-}
-
-interface CacheEntry<T> {
-  value: T
-  expires: number
-}
-
-function cacheGet<T>(key: string): T | null {
-  try {
-    const raw = window.localStorage.getItem(CACHE_PREFIX + key)
-    if (!raw) return null
-    const entry = JSON.parse(raw) as CacheEntry<T>
-    if (!entry || entry.expires < Date.now()) {
-      window.localStorage.removeItem(CACHE_PREFIX + key)
-      return null
-    }
-    return entry.value
-  } catch {
-    return null
-  }
-}
-
-function cacheSet<T>(key: string, value: T): void {
-  try {
-    const entry: CacheEntry<T> = { value, expires: Date.now() + CACHE_TTL_MS }
-    window.localStorage.setItem(CACHE_PREFIX + key, JSON.stringify(entry))
-  } catch {
-    // quota exceeded or unavailable — ignore
-  }
-}
-
-function searchCacheKey(artist: string, title: string): string {
-  return `search:${artist.toLowerCase().trim()}::${title.toLowerCase().trim()}`
-}
-
-function requireApiKey(): string {
-  if (!env.youtubeApiKey) {
-    throw new Error('YouTube API key is missing. Set VITE_YOUTUBE_API_KEY in .env.local')
-  }
-  return env.youtubeApiKey
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-function isQuotaExceededError(err: unknown): boolean {
-  return axios.isAxiosError(err) && err.response?.status === 403
-}
 
 interface YouTubeThumbnails {
   default?: { url: string }
@@ -135,75 +34,58 @@ interface YouTubeVideoDetailsResponse {
   }>
 }
 
-function pickThumbnail(thumbs: YouTubeThumbnails): string | undefined {
-  return thumbs.high?.url ?? thumbs.medium?.url ?? thumbs.default?.url
-}
-
-function trackFromSnippet(
-  videoId: string,
-  snippet: YouTubeSearchResponse['items'][number]['snippet'],
-  override: { title?: string; artist?: string; album?: string },
-  durationMs: number,
-): Track {
-  return {
-    id: videoId,
-    title: override.title ?? parseYouTubeTitle(snippet.title),
-    artist: override.artist ?? cleanChannelName(snippet.channelTitle),
-    album: override.album,
-    duration: durationMs,
-    albumArt: pickThumbnail(snippet.thumbnails),
-    previewUrl: null,
-    service: 'youtube',
-    externalUrl: `https://music.youtube.com/watch?v=${videoId}`,
-    youtubeUrl: `https://www.youtube.com/watch?v=${videoId}`,
-  }
-}
-
-export async function searchTrack(title: string, artist: string): Promise<Track | null> {
-  const cacheKey = searchCacheKey(artist, title)
-  const cached = cacheGet<Track>(cacheKey)
-  if (cached) return cached
-
-  const apiKey = requireApiKey()
-  const q = `${artist} ${title} official audio`
-
-  try {
-    const { data } = await axios.get<YouTubeSearchResponse>(`${API_ENDPOINTS.youtube}/search`, {
-      params: {
-        part: 'snippet',
-        q,
-        type: 'video',
-        videoCategoryId: '10',
-        maxResults: 3,
-        key: apiKey,
-      },
-      timeout: 8000,
-    })
-    recordQuotaUse(SEARCH_COST)
-
-    const top = data.items[0]
-    if (!top) return null
-
-    const videoId = top.id.videoId
-    const details = await getVideoDetails([videoId])
-    const duration = details[0]?.duration ?? 0
-
-    const track = trackFromSnippet(videoId, top.snippet, { title, artist }, duration)
-    cacheSet(cacheKey, track)
-    return track
-  } catch (err) {
-    if (isQuotaExceededError(err)) {
-      console.warn('YouTube API quota exceeded for today; serving cached results if available.')
-      return cacheGet<Track>(cacheKey)
-    }
-    throw err
-  }
-}
-
 export interface VideoDetails {
   id: string
   duration: number
   viewCount: number
+}
+
+function requireApiKey(): string {
+  if (!YOUTUBE_API_KEY) {
+    throw new Error('YouTube API key is missing. Set VITE_YOUTUBE_API_KEY in .env.local')
+  }
+  return YOUTUBE_API_KEY
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function isQuotaExceededError(err: unknown): boolean {
+  return axios.isAxiosError(err) && err.response?.status === 403
+}
+
+function pickThumbnail(thumbs: YouTubeThumbnails): string {
+  return thumbs.high?.url ?? thumbs.medium?.url ?? thumbs.default?.url ?? ''
+}
+
+function buildTrack(
+  videoId: string,
+  snippet: YouTubeSearchResponse['items'][number]['snippet'],
+  opts: {
+    title?: string
+    artist?: string
+    album?: string
+    lastfmUrl?: string
+    playcount?: number
+    tags?: string[]
+    duration?: number
+  },
+): Track {
+  return {
+    id: videoId,
+    title: opts.title ?? parseYouTubeTitle(snippet.title),
+    artist: opts.artist ?? cleanChannelName(snippet.channelTitle),
+    album: opts.album ?? '',
+    albumArt: pickThumbnail(snippet.thumbnails),
+    duration: opts.duration ?? 0,
+    youtubeUrl: `https://www.youtube.com/watch?v=${videoId}`,
+    youtubeMusicUrl: `https://music.youtube.com/watch?v=${videoId}`,
+    lastfmUrl: opts.lastfmUrl ?? '',
+    playcount: opts.playcount ?? 0,
+    tags: opts.tags ?? [],
+    service: 'youtube',
+  }
 }
 
 export async function getVideoDetails(videoIds: string[]): Promise<VideoDetails[]> {
@@ -211,23 +93,19 @@ export async function getVideoDetails(videoIds: string[]): Promise<VideoDetails[
   const apiKey = requireApiKey()
 
   try {
-    const { data } = await axios.get<YouTubeVideoDetailsResponse>(
-      `${API_ENDPOINTS.youtube}/videos`,
-      {
-        params: {
-          part: 'contentDetails,statistics',
-          id: videoIds.join(','),
-          key: apiKey,
-        },
-        timeout: 8000,
+    const { data } = await axios.get<YouTubeVideoDetailsResponse>(`${YOUTUBE_BASE_URL}/videos`, {
+      params: {
+        part: 'contentDetails,statistics',
+        id: videoIds.join(','),
+        key: apiKey,
       },
-    )
-    recordQuotaUse(DETAILS_COST_PER_ID * videoIds.length)
+      timeout: 8000,
+    })
 
     return data.items.map((item) => ({
       id: item.id,
-      duration: parseDuration(item.contentDetails.duration),
-      viewCount: Number(item.statistics.viewCount ?? 0),
+      duration: item.contentDetails ? parseDuration(item.contentDetails.duration) : 0,
+      viewCount: Number(item.statistics?.viewCount ?? 0),
     }))
   } catch (err) {
     if (isQuotaExceededError(err)) {
@@ -238,75 +116,109 @@ export async function getVideoDetails(videoIds: string[]): Promise<VideoDetails[
   }
 }
 
-export async function searchBatch(tracks: LastfmTrack[], maxResults = 20): Promise<Track[]> {
-  const limited = tracks.slice(0, Math.min(maxResults, tracks.length))
-  const results: Track[] = []
-  const needsDetails: Array<{ track: Track; videoId: string }> = []
-  let quotaBlocked = false
+export async function searchTrack(title: string, artist: string): Promise<Track | null> {
+  if (isQuotaExceeded()) return null
+  const apiKey = requireApiKey()
+  const q = `${artist} ${title} official audio`
+
+  try {
+    const { data } = await axios.get<YouTubeSearchResponse>(`${YOUTUBE_BASE_URL}/search`, {
+      params: {
+        part: 'snippet',
+        q,
+        type: 'video',
+        videoCategoryId: '10',
+        maxResults: 3,
+        key: apiKey,
+      },
+      timeout: 8000,
+    })
+    addQuotaUsage(1)
+
+    const top = data.items[0]
+    if (!top) return null
+
+    const videoId = top.id.videoId
+    const details = await getVideoDetails([videoId])
+    const duration = details[0]?.duration ?? 0
+
+    return buildTrack(videoId, top.snippet, { title, artist, duration })
+  } catch (err) {
+    if (isQuotaExceededError(err)) {
+      console.warn('YouTube API quota exceeded for today.')
+      return null
+    }
+    throw err
+  }
+}
+
+export async function searchBatch(
+  sources: LastfmTrack[],
+  maxResults = 20,
+): Promise<{ tracks: Track[]; missing: number; quotaStopped: boolean }> {
+  const limited = sources.slice(0, Math.min(maxResults, sources.length))
+  const tracks: Track[] = []
+  const needsDuration: Array<{ track: Track; videoId: string }> = []
+  let quotaStopped = false
+  let missing = 0
 
   for (const src of limited) {
-    const cacheKey = searchCacheKey(src.artist, src.title)
-    const cached = cacheGet<Track>(cacheKey)
-    if (cached) {
-      results.push({
-        ...cached,
-        title: src.title,
-        artist: src.artist,
-        album: src.album ?? cached.album,
-      })
-      continue
+    if (isQuotaExceeded()) {
+      quotaStopped = true
+      break
     }
-
-    if (quotaBlocked) continue
-
     try {
       const apiKey = requireApiKey()
       const q = `${src.artist} ${src.title} official audio`
-      const { data } = await axios.get<YouTubeSearchResponse>(
-        `${API_ENDPOINTS.youtube}/search`,
-        {
-          params: {
-            part: 'snippet',
-            q,
-            type: 'video',
-            videoCategoryId: '10',
-            maxResults: 3,
-            key: apiKey,
-          },
-          timeout: 8000,
+      const { data } = await axios.get<YouTubeSearchResponse>(`${YOUTUBE_BASE_URL}/search`, {
+        params: {
+          part: 'snippet',
+          q,
+          type: 'video',
+          videoCategoryId: '10',
+          maxResults: 3,
+          key: apiKey,
         },
-      )
-      recordQuotaUse(SEARCH_COST)
+        timeout: 8000,
+      })
+      addQuotaUsage(1)
 
       const top = data.items[0]
-      if (top) {
-        const videoId = top.id.videoId
-        const track = trackFromSnippet(
-          videoId,
-          top.snippet,
-          { title: src.title, artist: src.artist, album: src.album },
-          0,
-        )
-        results.push(track)
-        needsDetails.push({ track, videoId })
+      if (!top) {
+        missing += 1
+        continue
       }
+
+      const videoId = top.id.videoId
+      const track = buildTrack(videoId, top.snippet, {
+        title: src.title,
+        artist: src.artist,
+        album: src.album ?? '',
+        lastfmUrl: src.url ?? '',
+        playcount: src.playcount,
+        tags: src.tags ?? [],
+      })
+      tracks.push(track)
+      needsDuration.push({ track, videoId })
     } catch (err) {
       if (isQuotaExceededError(err)) {
         console.warn('YouTube API quota exceeded; stopping batch search.')
-        quotaBlocked = true
+        quotaStopped = true
+        break
       } else {
         console.warn(`YouTube search failed for "${src.artist} - ${src.title}":`, err)
+        missing += 1
       }
     }
 
     await sleep(SEARCH_DELAY_MS)
   }
 
-  if (needsDetails.length > 0 && !quotaBlocked) {
+  if (needsDuration.length > 0) {
     try {
-      const details = await getVideoDetails(needsDetails.map((p) => p.videoId))
+      const details = await getVideoDetails(needsDuration.map((p) => p.videoId))
       const byId = new Map(details.map((d) => [d.id, d]))
-      for (const { track, videoId } of needsDetails) {
+      for (const { track, videoId } of needsDuration) {
         const info = byId.get(videoId)
         if (info) track.duration = info.duration
       }
@@ -315,9 +227,50 @@ export async function searchBatch(tracks: LastfmTrack[], maxResults = 20): Promi
     }
   }
 
-  for (const { track } of needsDetails) {
-    cacheSet(searchCacheKey(track.artist, track.title), track)
-  }
+  return { tracks, missing, quotaStopped }
+}
 
-  return results
+export async function searchYouTubeByKeywords(genres: string[], limit = 20): Promise<Track[]> {
+  const cleaned = genres.map((g) => g.trim()).filter(Boolean)
+  if (cleaned.length === 0 || isQuotaExceeded()) return []
+
+  const apiKey = requireApiKey()
+  const q = `${cleaned.join(' ')} music playlist`
+
+  try {
+    const { data } = await axios.get<YouTubeSearchResponse>(`${YOUTUBE_BASE_URL}/search`, {
+      params: {
+        part: 'snippet',
+        q,
+        type: 'video',
+        videoCategoryId: '10',
+        maxResults: limit,
+        key: apiKey,
+      },
+      timeout: 8000,
+    })
+    addQuotaUsage(1)
+
+    const items = data.items
+    if (items.length === 0) return []
+
+    const details = await getVideoDetails(items.map((i) => i.id.videoId))
+    const byId = new Map(details.map((d) => [d.id, d]))
+
+    return items.map((item): Track => {
+      const videoId = item.id.videoId
+      const info = byId.get(videoId)
+      return buildTrack(videoId, item.snippet, {
+        duration: info?.duration ?? 0,
+        playcount: info?.viewCount ?? 0,
+        tags: cleaned.slice(),
+      })
+    })
+  } catch (err) {
+    if (isQuotaExceededError(err)) {
+      console.warn('YouTube API quota exceeded during keyword search.')
+      return []
+    }
+    throw err
+  }
 }

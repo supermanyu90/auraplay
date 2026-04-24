@@ -7,6 +7,7 @@ export interface YouTubePlayerProps {
   onEnded?: () => void
   onNext?: () => void
   onPrevious?: () => void
+  onPlayStateChange?: (isPlaying: boolean) => void
 }
 
 interface IFramePlayer {
@@ -88,12 +89,18 @@ export function YouTubePlayer({
   onEnded,
   onNext,
   onPrevious,
+  onPlayStateChange,
 }: YouTubePlayerProps) {
   const hostRef = useRef<HTMLDivElement>(null)
   const playerRef = useRef<IFramePlayer | null>(null)
+  const onEndedRef = useRef(onEnded)
+  const onPlayStateChangeRef = useRef(onPlayStateChange)
   const [isReady, setIsReady] = useState(false)
   const [isPlaying, setIsPlaying] = useState(false)
   const [audioOnly, setAudioOnly] = useState(false)
+
+  onEndedRef.current = onEnded
+  onPlayStateChangeRef.current = onPlayStateChange
 
   useEffect(() => {
     if (!hostRef.current) return
@@ -123,8 +130,10 @@ export function YouTubePlayer({
           },
           onStateChange: (e) => {
             if (cancelled) return
-            setIsPlaying(e.data === YT.PlayerState.PLAYING)
-            if (e.data === YT.PlayerState.ENDED) onEnded?.()
+            const playing = e.data === YT.PlayerState.PLAYING
+            setIsPlaying(playing)
+            onPlayStateChangeRef.current?.(playing)
+            if (e.data === YT.PlayerState.ENDED) onEndedRef.current?.()
           },
         },
       })
@@ -139,8 +148,6 @@ export function YouTubePlayer({
       }
       playerRef.current = null
     }
-    // Player instance lives for the lifetime of the component.
-    // videoId/autoplay changes are handled in the effect below via loadVideoById/cueVideoById.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

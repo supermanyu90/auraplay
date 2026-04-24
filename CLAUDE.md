@@ -1,7 +1,7 @@
 # AuraPlay — Weather-Based Music Discovery
 
 ## Project Overview
-AuraPlay is an open-source web application that recommends music from Spotify, Apple Music, and YouTube Music based on real-time ambient environmental conditions (temperature, humidity, pressure, wind, weather). It fuses weather API data with browser sensor APIs to create a "mood profile" and fetches matching tracks from multiple music services.
+AuraPlay is an open-source web application that recommends music based on real-time ambient environmental conditions (temperature, humidity, pressure, wind, weather). It fuses weather API data with browser sensor APIs to create a "mood profile," uses Last.fm to discover matching tracks, and plays them via YouTube. The entire pipeline is free — no user subscriptions required.
 
 ## Tech Stack
 - **Framework**: React 18+ with TypeScript
@@ -10,8 +10,8 @@ AuraPlay is an open-source web application that recommends music from Spotify, A
 - **State management**: Zustand
 - **Routing**: React Router v6
 - **HTTP client**: Axios
-- **Auth**: Supabase Auth (@supabase/supabase-js)
-- **Audio playback**: Howler.js
+- **Auth (optional)**: Supabase Auth (`@supabase/supabase-js`)
+- **Audio playback**: YouTube IFrame Player API
 - **Animations**: Framer Motion
 - **Icons**: Lucide React
 - **Testing**: Vitest + React Testing Library
@@ -20,47 +20,41 @@ AuraPlay is an open-source web application that recommends music from Spotify, A
 ## Project Structure
 ```
 src/
-├── components/           # Reusable UI components
-│   ├── ui/              # Base UI primitives (Button, Card, Badge, etc.)
-│   ├── layout/          # Header, Footer, Sidebar, MobileNav
-│   ├── weather/         # WeatherCard, SensorGauge, WeatherPicker
-│   ├── music/           # TrackCard, TrackList, NowPlaying, MiniPlayer
-│   └── auth/            # LoginForm, SignupForm, OAuthButtons
-├── pages/               # Route-level page components
+├── components/              # Reusable UI components
+│   ├── ui/                  # Base UI primitives (Button, Card, Badge, etc.)
+│   ├── layout/              # Header, Footer, Sidebar, MobileNav, WeatherBackground
+│   ├── weather/             # WeatherCard, SensorGauge, WeatherPicker
+│   ├── music/               # TrackCard, TrackList, YouTubePlayer, MiniPlayer
+│   └── auth/                # (optional) LoginForm, SignupForm
+├── pages/                   # Route-level page components
 │   ├── Home.tsx
 │   ├── Sense.tsx
 │   ├── Music.tsx
-│   ├── Profile.tsx
-│   └── Auth.tsx
-├── services/            # External API integrations
-│   ├── weather/         # OpenWeatherMap API client
-│   ├── spotify/         # Spotify Web API + OAuth PKCE
-│   ├── apple/           # Apple Music API client
-│   ├── youtube/         # YouTube Data API v3 client
-│   ├── supabase/        # Supabase client, auth helpers, DB queries
-│   └── musicService.ts  # Unified music service orchestrator
-├── hooks/               # Custom React hooks
-│   ├── useWeather.ts
-│   ├── useAudioPlayer.ts
-│   ├── useMoodMapper.ts
-│   ├── useGeolocation.ts
-│   └── useSensors.ts
-├── stores/              # Zustand stores
+│   └── Profile.tsx
+├── services/                # External API integrations
+│   ├── weather/             # OpenWeatherMap API client
+│   ├── lastfm/              # Last.fm API client (discovery)
+│   ├── youtube/             # YouTube Data API client (playback)
+│   ├── musicService.ts      # Orchestrator: Last.fm → dedupe → YouTube → cache
+│   └── supabase/            # (optional) Supabase client, auth helpers
+├── hooks/                   # Custom React hooks
+│   └── useGeolocation.ts
+├── stores/                  # Zustand stores
 │   ├── weatherStore.ts
 │   ├── musicStore.ts
-│   ├── authStore.ts
-│   └── playerStore.ts
-├── utils/               # Helper functions
-│   ├── moodMapper.ts    # Weather → mood profile algorithm
-│   ├── genreMapping.ts  # Mood genres → Spotify/Apple/YT genre seeds
-│   ├── youtubeCleanup.ts # YouTube title/artist parsing
-│   ├── cache.ts         # LocalStorage caching with TTL
-│   └── formatters.ts    # Duration, temperature formatters
-├── types/               # TypeScript type definitions
-│   └── index.ts         # Track, WeatherData, MoodProfile, etc.
-├── config/              # Configuration and constants
-│   └── constants.ts     # API keys, endpoints, feature flags
-├── styles/              # Global styles
+│   └── preferencesStore.ts
+├── utils/                   # Helper functions
+│   ├── moodMapper.ts        # Weather → mood profile algorithm
+│   ├── lastfmTagMapping.ts  # Mood genres → Last.fm tag names
+│   ├── youtubeCleanup.ts    # YouTube title/artist parsing, duration formatting
+│   ├── cache.ts             # LocalStorage cache with TTL
+│   ├── quotaTracker.ts      # Daily YouTube quota counter
+│   └── deduplication.ts     # Track dedupe by normalized artist/title
+├── types/                   # TypeScript type definitions
+│   └── index.ts             # Track, WeatherData, MoodProfile, MusicResult, etc.
+├── config/                  # Configuration and constants
+│   └── constants.ts         # API keys, endpoints, quota/cache constants
+├── styles/                  # Global styles
 │   └── globals.css
 ├── App.tsx
 └── main.tsx
@@ -75,19 +69,29 @@ Weather conditions map to audio parameters:
 - `tempoMin/tempoMax`: BPM range
 - `genres`: Array of genre strings matching the mood
 
-The mapping is deterministic (rules-based) with overrides for extreme temperature (>35°C) and wind (>40km/h).
+The mapping is deterministic (rules-based) with overrides for extreme temperature (>35°C → `scorching`) and wind (>40km/h → `windy`).
 
-### Multi-Service Music Resolution
-All three music services are queried IN PARALLEL via Promise.allSettled. Results are normalized to a shared Track interface, interleaved (not grouped by service), and cached for 30 minutes per weather condition.
+### Last.fm + YouTube Music Resolution
+Last.fm is the recommendation engine. It takes genre tags from the mood mapper and returns popular tracks. These track names are then searched on YouTube to find playable versions. The YouTube IFrame Player provides full-song playback embedded in the app. The entire pipeline is free with no user subscriptions required.
+
+The first three mood tags are fetched from Last.fm in parallel (`tag.getTopTracks`), deduped by normalized artist+title, sorted by playcount, and capped at 25 tracks. Each surviving track is then searched on YouTube sequentially with a 200ms stagger. Durations are batched into a single `videos.list` call to save round-trips.
+
+### Caching
+- Track recommendations per weather condition: 30 minutes (`auraplay:tracks:{condition}`)
+- Last.fm per-tag results: 30 minutes (`auraplay:lastfm:tag:…`)
+- YouTube per-song lookups: 1 hour (`auraplay:youtube:search:…`)
+- YouTube daily quota counter keyed by UTC date
+
+### Fallback Behavior
+- Last.fm empty/down → `searchYouTubeByKeywords(mood.genres)` to build a genre-based playlist
+- YouTube quota exceeded → serve stale cache with a visible banner
+- Both fail → Music page renders a manual genre picker that links to `music.youtube.com/search?q=…`
 
 ### Authentication Flow
-- Supabase handles user auth (email/password + Google OAuth)
-- Spotify uses OAuth 2.0 with PKCE (no client secret needed in browser)
-- Apple Music uses a developer token (JWT) for catalog search (no user auth needed)
-- YouTube Data API uses an API key (no user auth needed)
+Supabase handles user auth (optional). Last.fm and YouTube use API keys only — no user-facing OAuth flow needed. Users never need to "connect" a music service.
 
 ### Background Gradient
-The entire app background changes based on detected weather. Gradient colors are defined per weather condition in the mood mapper and applied via CSS custom properties for smooth transitions.
+The entire app background changes based on detected weather. Gradient colors are defined per weather condition in the mood mapper and applied via Framer Motion cross-fades over 1.5s. Rainy/snowy/stormy conditions also render particle layers.
 
 ## Code Style
 - Functional components only, no class components
@@ -102,17 +106,20 @@ The entire app background changes based on detected weather. Gradient colors are
 - Error boundaries around route-level components
 
 ## Environment Variables
-All sensitive keys go in `.env.local` (gitignored):
+Required (all free):
 ```
-VITE_SPOTIFY_CLIENT_ID=
-VITE_OPENWEATHER_API_KEY=
-VITE_SUPABASE_URL=
-VITE_SUPABASE_ANON_KEY=
-VITE_APPLE_MUSIC_TOKEN=
+VITE_LASTFM_API_KEY=
 VITE_YOUTUBE_API_KEY=
+VITE_OPENWEATHER_API_KEY=
 ```
 
-Access via `import.meta.env.VITE_*` in code.
+Optional:
+```
+VITE_SUPABASE_URL=
+VITE_SUPABASE_ANON_KEY=
+```
+
+Access via `import.meta.env.VITE_*` in code (exported via `src/config/constants.ts`).
 
 ## Key Commands
 - `npm run dev` — Start dev server (Vite)
@@ -125,9 +132,9 @@ Access via `import.meta.env.VITE_*` in code.
 ## Development Guidelines
 1. Always handle loading, error, and empty states for every data-fetching component
 2. Every API call should have a try/catch with user-friendly error messages
-3. Cache aggressively: weather data (10 min TTL), music recommendations (30 min TTL)
-4. Spotify token refresh must happen automatically before expiry
-5. The app must work gracefully when any single music service is unavailable
+3. Cache aggressively: weather data (10 min TTL), track results (30 min TTL)
+4. Respect the self-imposed YouTube limit of 100 searches/day; degrade gracefully when hit
+5. The app must work gracefully when Last.fm is unavailable (fall back to YouTube genre search)
 6. All text content should support future i18n (no hardcoded user-facing strings in logic files)
 7. Mobile-first responsive design: test at 375px, 768px, and 1440px
 8. Use semantic HTML and ARIA attributes for accessibility
@@ -136,7 +143,7 @@ Access via `import.meta.env.VITE_*` in code.
 
 ## Git Workflow
 - `main` branch: production-ready code only
-- Feature branches: `feature/spotify-auth`, `feature/mood-mapper`, etc.
+- Feature branches: `feature/lastfm-recommendations`, `feature/mood-mapper`, etc.
 - Commit message format: `type(scope): description`
   - Types: feat, fix, refactor, style, docs, test, chore
-  - Example: `feat(spotify): add OAuth PKCE authentication flow`
+  - Example: `feat(music): unified Last.fm + YouTube pipeline`

@@ -1,4 +1,4 @@
-import { Play, Volume2 } from 'lucide-react'
+import { Play, Volume2, Youtube } from 'lucide-react'
 import type { Track } from '../../types'
 import { formatDuration } from '../../utils/youtubeCleanup'
 
@@ -39,11 +39,10 @@ export function TrackCard({ track, index, isActive, onPlay }: TrackCardProps) {
           <p className="font-medium text-weather-cloudy-900 truncate">{track.title}</p>
           <p className="text-sm text-weather-cloudy-700 truncate">{track.artist}</p>
         </div>
-        {track.duration > 0 ? (
-          <span className="text-xs text-weather-cloudy-700 tabular-nums hidden sm:inline">
-            {formatDuration(track.duration)}
-          </span>
-        ) : null}
+        <span className="hidden sm:flex items-center gap-1 text-xs text-weather-cloudy-700 tabular-nums">
+          <Youtube className="w-3.5 h-3.5 text-weather-stormy-500" aria-hidden="true" />
+          {track.duration > 0 ? formatDuration(track.duration) : '—'}
+        </span>
         <span
           className={`w-9 h-9 rounded-full flex items-center justify-center flex-none transition-colors ${
             isActive

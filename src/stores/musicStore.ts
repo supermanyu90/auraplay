@@ -1,19 +1,33 @@
 import { create } from 'zustand'
-import { getRecommendationsForMood } from '../services/lastfm/lastfmApi'
-import { searchBatch } from '../services/youtube/youtubeMusicApi'
+import { YOUTUBE_DAILY_SEARCH_LIMIT } from '../config/constants'
+import { getRecommendations } from '../services/musicService'
+import { getQuotaUsed } from '../utils/quotaTracker'
 import type { MoodProfile, Track, WeatherCondition } from '../types'
 
-interface MusicStore {
+interface MusicState {
   tracks: Track[]
-  currentIndex: number
+  currentTrackIndex: number | null
+  isPlaying: boolean
+
   isLoading: boolean
+  loadingMessage: string
+
   error: string | null
-  loadedFor: WeatherCondition | null
-  loadRecommendations: (mood: MoodProfile) => Promise<void>
+  warnings: string[]
+
+  youtubeQuotaUsed: number
+  youtubeQuotaLimit: number
+
+  lastCondition: WeatherCondition | null
+  lastFetchedAt: number | null
+
+  fetchRecommendations: (mood: MoodProfile) => Promise<void>
   playTrack: (index: number) => void
   nextTrack: () => void
   previousTrack: () => void
-  clear: () => void
+  togglePlayPause: () => void
+  setIsPlaying: (isPlaying: boolean) => void
+  clearTracks: () => void
 }
 
 function toMessage(err: unknown): string {
@@ -21,75 +35,98 @@ function toMessage(err: unknown): string {
   return 'Could not load music right now.'
 }
 
-export const useMusicStore = create<MusicStore>((set, get) => ({
+export const useMusicStore = create<MusicState>((set, get) => ({
   tracks: [],
-  currentIndex: 0,
+  currentTrackIndex: null,
+  isPlaying: false,
+
   isLoading: false,
+  loadingMessage: '',
+
   error: null,
-  loadedFor: null,
+  warnings: [],
 
-  async loadRecommendations(mood) {
-    const { loadedFor, tracks, isLoading } = get()
-    if (isLoading) return
-    if (loadedFor === mood.condition && tracks.length > 0) return
+  youtubeQuotaUsed: getQuotaUsed(),
+  youtubeQuotaLimit: YOUTUBE_DAILY_SEARCH_LIMIT,
 
-    set({ isLoading: true, error: null, tracks: [], currentIndex: 0 })
+  lastCondition: null,
+  lastFetchedAt: null,
+
+  async fetchRecommendations(mood) {
+    const state = get()
+    if (state.isLoading) return
+
+    set({
+      isLoading: true,
+      loadingMessage: 'Reading the weather...',
+      error: null,
+      warnings: [],
+    })
 
     try {
-      const lastfmTracks = await getRecommendationsForMood(mood, 30)
-      if (lastfmTracks.length === 0) {
-        set({
-          isLoading: false,
-          error: 'Last.fm returned no tracks for this mood. Try a different one.',
-          loadedFor: mood.condition,
-        })
-        return
-      }
-
-      const youtubeTracks = await searchBatch(lastfmTracks, 20)
-      if (youtubeTracks.length === 0) {
-        set({
-          isLoading: false,
-          error: 'Could not find playable versions on YouTube.',
-          loadedFor: mood.condition,
-        })
-        return
-      }
+      const result = await getRecommendations(mood, {
+        onProgress: (msg) => set({ loadingMessage: msg }),
+      })
 
       set({
-        tracks: youtubeTracks,
-        currentIndex: 0,
+        tracks: result.tracks,
+        currentTrackIndex: result.tracks.length > 0 ? 0 : null,
         isLoading: false,
+        loadingMessage: '',
         error: null,
-        loadedFor: mood.condition,
+        warnings: result.errors,
+        youtubeQuotaUsed: result.quotaUsed,
+        lastCondition: mood.condition,
+        lastFetchedAt: Date.now(),
       })
     } catch (err) {
-      set({ error: toMessage(err), isLoading: false })
+      set({
+        error: toMessage(err),
+        isLoading: false,
+        loadingMessage: '',
+        youtubeQuotaUsed: getQuotaUsed(),
+      })
     }
   },
 
   playTrack(index) {
     const { tracks } = get()
     if (index >= 0 && index < tracks.length) {
-      set({ currentIndex: index })
+      set({ currentTrackIndex: index, isPlaying: true })
     }
   },
 
   nextTrack() {
-    const { currentIndex, tracks } = get()
-    if (currentIndex + 1 < tracks.length) {
-      set({ currentIndex: currentIndex + 1 })
+    const { currentTrackIndex, tracks } = get()
+    if (currentTrackIndex != null && currentTrackIndex + 1 < tracks.length) {
+      set({ currentTrackIndex: currentTrackIndex + 1 })
     }
   },
 
   previousTrack() {
-    const { currentIndex } = get()
-    if (currentIndex > 0) {
-      set({ currentIndex: currentIndex - 1 })
+    const { currentTrackIndex } = get()
+    if (currentTrackIndex != null && currentTrackIndex > 0) {
+      set({ currentTrackIndex: currentTrackIndex - 1 })
     }
   },
 
-  clear() {
-    set({ tracks: [], currentIndex: 0, error: null, isLoading: false, loadedFor: null })
+  togglePlayPause() {
+    set((state) => ({ isPlaying: !state.isPlaying }))
+  },
+
+  setIsPlaying(isPlaying) {
+    set({ isPlaying })
+  },
+
+  clearTracks() {
+    set({
+      tracks: [],
+      currentTrackIndex: null,
+      isPlaying: false,
+      error: null,
+      warnings: [],
+      lastCondition: null,
+      lastFetchedAt: null,
+    })
   },
 }))

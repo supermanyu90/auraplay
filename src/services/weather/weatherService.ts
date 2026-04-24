@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { API_ENDPOINTS, env } from '../../config/constants'
+import { OPENWEATHER_API_KEY, OPENWEATHER_BASE_URL } from '../../config/constants'
 import type { WeatherCondition, WeatherData } from '../../types'
 
 interface OpenWeatherResponse {
@@ -45,20 +45,22 @@ function normalize(res: OpenWeatherResponse): WeatherData {
 }
 
 function requireApiKey(): string {
-  if (!env.openWeatherApiKey) {
+  if (!OPENWEATHER_API_KEY) {
     throw new Error(
       'OpenWeatherMap API key is missing. Set VITE_OPENWEATHER_API_KEY in .env.local',
     )
   }
-  return env.openWeatherApiKey
+  return OPENWEATHER_API_KEY
 }
 
 function messageFromError(err: unknown, fallback: string): Error {
   if (axios.isAxiosError(err)) {
     const status = err.response?.status
-    if (status === 401) return new Error('OpenWeatherMap rejected the API key. Check VITE_OPENWEATHER_API_KEY.')
+    if (status === 401)
+      return new Error('OpenWeatherMap rejected the API key. Check VITE_OPENWEATHER_API_KEY.')
     if (status === 404) return new Error('Location not found.')
-    if (status === 429) return new Error('Weather lookups are rate-limited. Try again in a minute.')
+    if (status === 429)
+      return new Error('Weather lookups are rate-limited. Try again in a minute.')
   }
   return new Error(fallback)
 }
@@ -66,7 +68,7 @@ function messageFromError(err: unknown, fallback: string): Error {
 export async function getWeatherByCoords(lat: number, lon: number): Promise<WeatherData> {
   const appid = requireApiKey()
   try {
-    const { data } = await axios.get<OpenWeatherResponse>(`${API_ENDPOINTS.openweather}/weather`, {
+    const { data } = await axios.get<OpenWeatherResponse>(`${OPENWEATHER_BASE_URL}/weather`, {
       params: { lat, lon, appid, units: 'metric' },
       timeout: 8000,
     })
@@ -79,7 +81,7 @@ export async function getWeatherByCoords(lat: number, lon: number): Promise<Weat
 export async function getWeatherByCity(cityName: string): Promise<WeatherData> {
   const appid = requireApiKey()
   try {
-    const { data } = await axios.get<OpenWeatherResponse>(`${API_ENDPOINTS.openweather}/weather`, {
+    const { data } = await axios.get<OpenWeatherResponse>(`${OPENWEATHER_BASE_URL}/weather`, {
       params: { q: cityName, appid, units: 'metric' },
       timeout: 8000,
     })
