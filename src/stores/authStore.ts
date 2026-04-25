@@ -23,11 +23,6 @@ interface AuthStore {
 let authListenerRegistered = false
 let initialized = false
 
-function toMessage(err: unknown): string {
-  if (err instanceof Error) return err.message
-  return 'Authentication failed.'
-}
-
 export const useAuthStore = create<AuthStore>((set) => ({
   user: null,
   session: null,
@@ -46,22 +41,33 @@ export const useAuthStore = create<AuthStore>((set) => ({
     }
 
     try {
-      const { data } = await supabase.auth.getSession()
+      const { data, error } = await supabase.auth.getSession()
+      if (error) throw error
       set({
         session: data.session,
         user: data.session?.user ?? null,
         isReady: true,
         enabled: true,
       })
+    } catch (err) {
+      console.warn('Supabase getSession failed; clearing stale session:', err)
+      try {
+        window.localStorage.removeItem('auraplay-auth')
+      } catch {
+        // ignore storage errors
+      }
+      set({ session: null, user: null, isReady: true, enabled: true, error: null })
+    }
 
-      if (!authListenerRegistered) {
-        authListenerRegistered = true
+    if (!authListenerRegistered) {
+      authListenerRegistered = true
+      try {
         supabase.auth.onAuthStateChange((_event, session) => {
           set({ session, user: session?.user ?? null })
         })
+      } catch (err) {
+        console.warn('Supabase auth listener registration failed:', err)
       }
-    } catch (err) {
-      set({ error: toMessage(err), isReady: true })
     }
   },
 
