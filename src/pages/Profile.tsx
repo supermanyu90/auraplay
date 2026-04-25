@@ -1,24 +1,35 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
+  AlertCircle,
   Check,
   Clock,
   ExternalLink,
   Info,
+  Loader2,
   LogIn,
   LogOut,
+  RefreshCw,
   Trash2,
   X,
   Youtube,
 } from 'lucide-react'
 import type { User } from '@supabase/supabase-js'
 import {
+  JAMENDO_CLIENT_ID,
   LASTFM_API_KEY,
   YOUTUBE_API_KEY,
   YOUTUBE_DAILY_SEARCH_LIMIT,
 } from '../config/constants'
 import { cacheClear } from '../utils/cache'
 import { getQuotaUsed } from '../utils/quotaTracker'
+import {
+  checkAudius,
+  checkJamendo,
+  checkLastfm,
+  checkYouTube,
+  type HealthResult,
+} from '../utils/serviceHealth'
 import { useAuthStore } from '../stores/authStore'
 import { useMusicStore } from '../stores/musicStore'
 import { usePreferencesStore } from '../stores/preferencesStore'
@@ -28,6 +39,20 @@ import type {
   PlaybackPreference,
   RegionalPreference,
 } from '../types'
+
+interface AllHealth {
+  lastfm: HealthResult
+  youtube: HealthResult
+  jamendo: HealthResult
+  audius: HealthResult
+}
+
+const INITIAL_HEALTH: AllHealth = {
+  lastfm: { status: 'checking' },
+  youtube: { status: 'checking' },
+  jamendo: { status: 'checking' },
+  audius: { status: 'checking' },
+}
 
 export default function Profile() {
   const temperatureUnit = usePreferencesStore((s) => s.temperatureUnit)
@@ -51,8 +76,31 @@ export default function Profile() {
 
   const lastfmConfigured = LASTFM_API_KEY.length > 0
   const youtubeConfigured = YOUTUBE_API_KEY.length > 0
+  const jamendoConfigured = JAMENDO_CLIENT_ID.length > 0
   const configuredCount = (lastfmConfigured ? 1 : 0) + (youtubeConfigured ? 1 : 0)
   const quotaUsed = getQuotaUsed()
+
+  const [health, setHealth] = useState<AllHealth>(INITIAL_HEALTH)
+
+  const runChecks = useCallback(() => {
+    setHealth(INITIAL_HEALTH)
+    void checkLastfm().then((r) =>
+      setHealth((prev) => ({ ...prev, lastfm: r })),
+    )
+    void checkYouTube().then((r) =>
+      setHealth((prev) => ({ ...prev, youtube: r })),
+    )
+    void checkJamendo().then((r) =>
+      setHealth((prev) => ({ ...prev, jamendo: r })),
+    )
+    void checkAudius().then((r) =>
+      setHealth((prev) => ({ ...prev, audius: r })),
+    )
+  }, [])
+
+  useEffect(() => {
+    runChecks()
+  }, [runChecks])
 
   const handleClearCache = () => {
     cacheClear('auraplay:')
@@ -78,24 +126,55 @@ export default function Profile() {
       <AccountSection />
 
       <section aria-label="Connected services">
-        <h2 className="text-lg font-semibold text-weather-cloudy-900 mb-3">Connected services</h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-lg font-semibold text-weather-cloudy-900">Connected services</h2>
+          <button
+            type="button"
+            onClick={runChecks}
+            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/70 border border-weather-cloudy-100 text-xs text-weather-cloudy-900 hover:bg-white"
+            aria-label="Recheck service health"
+          >
+            <RefreshCw className="w-3 h-3" aria-hidden="true" />
+            Recheck
+          </button>
+        </div>
         <ul className="space-y-2">
           <ServiceCard
             label="Last.fm"
-            sublabel="Recommendation Engine (Free)"
+            sublabel="Discovery (Free)"
             description="Powering your music discovery"
-            configured={lastfmConfigured}
+            keyConfigured={lastfmConfigured}
+            health={health.lastfm}
           />
           <ServiceCard
             label="YouTube Music"
-            sublabel="Primary Playback (Free)"
+            sublabel="Playback (Free)"
             description={
               youtubeConfigured
                 ? `${quotaUsed}/${YOUTUBE_DAILY_SEARCH_LIMIT} searches used today`
                 : 'Needed for song playback'
             }
             extra={youtubeConfigured ? 'Resets daily at midnight UTC' : undefined}
-            configured={youtubeConfigured}
+            keyConfigured={youtubeConfigured}
+            health={health.youtube}
+          />
+          <ServiceCard
+            label="Jamendo"
+            sublabel="Playback fallback (Free)"
+            description={
+              jamendoConfigured
+                ? 'Creative Commons full songs, indie catalog'
+                : 'Add VITE_JAMENDO_CLIENT_ID to enable Creative Commons fallback'
+            }
+            keyConfigured={jamendoConfigured}
+            health={health.jamendo}
+          />
+          <ServiceCard
+            label="Audius"
+            sublabel="Playback fallback (Free, no key)"
+            description="Decentralized indie / hip-hop / electronic full songs"
+            keyConfigured={true}
+            health={health.audius}
           />
         </ul>
       </section>
@@ -433,31 +512,90 @@ interface ServiceCardProps {
   sublabel: string
   description: string
   extra?: string
-  configured: boolean
+  keyConfigured: boolean
+  health: HealthResult
 }
 
-function ServiceCard({ label, sublabel, description, extra, configured }: ServiceCardProps) {
+function ServiceCard({
+  label,
+  sublabel,
+  description,
+  extra,
+  keyConfigured,
+  health,
+}: ServiceCardProps) {
+  const effectiveStatus = !keyConfigured ? 'not-configured' : health.status
+  const indicator = describeStatus(effectiveStatus)
+
   return (
     <li className="flex items-start gap-3 p-4 rounded-xl bg-white/70 border border-weather-cloudy-100">
       <span
-        className={`w-10 h-10 rounded-full flex items-center justify-center flex-none ${
-          configured ? 'bg-weather-windy-500 text-white' : 'bg-weather-cloudy-300 text-white'
-        }`}
+        className={`w-10 h-10 rounded-full flex items-center justify-center flex-none text-white ${indicator.bg}`}
         aria-hidden="true"
       >
-        {configured ? <Check className="w-5 h-5" /> : <X className="w-5 h-5" />}
+        {indicator.icon}
       </span>
       <div className="flex-1 min-w-0">
-        <div className="flex items-baseline justify-between gap-2">
+        <div className="flex items-baseline justify-between gap-2 flex-wrap">
           <p className="font-semibold text-weather-cloudy-900">{label}</p>
           <span className="text-xs text-weather-cloudy-700 truncate">{sublabel}</span>
         </div>
         <p className="text-sm text-weather-cloudy-700 mt-0.5">{description}</p>
-        {extra ? <p className="text-[11px] text-weather-cloudy-700/70 mt-1">{extra}</p> : null}
+        <p className={`text-[11px] mt-1 ${indicator.textClass}`}>
+          <span className="font-medium">{indicator.label}</span>
+          {effectiveStatus === 'ok' && health.responseTimeMs != null
+            ? ` · ${health.responseTimeMs}ms${health.message ? ` · ${health.message}` : ''}`
+            : null}
+          {effectiveStatus === 'down' && health.message ? ` · ${health.message}` : null}
+        </p>
+        {extra ? <p className="text-[11px] text-weather-cloudy-700/70 mt-0.5">{extra}</p> : null}
       </div>
     </li>
   )
 }
+
+interface StatusVisual {
+  bg: string
+  textClass: string
+  label: string
+  icon: React.ReactNode
+}
+
+function describeStatus(status: ServiceCardStatus): StatusVisual {
+  switch (status) {
+    case 'ok':
+      return {
+        bg: 'bg-weather-windy-500',
+        textClass: 'text-weather-windy-700',
+        label: 'Live',
+        icon: <Check className="w-5 h-5" />,
+      }
+    case 'down':
+      return {
+        bg: 'bg-weather-stormy-500',
+        textClass: 'text-weather-stormy-700',
+        label: 'Down',
+        icon: <AlertCircle className="w-5 h-5" />,
+      }
+    case 'not-configured':
+      return {
+        bg: 'bg-weather-cloudy-300',
+        textClass: 'text-weather-cloudy-700',
+        label: 'Not configured',
+        icon: <X className="w-5 h-5" />,
+      }
+    case 'checking':
+    default:
+      return {
+        bg: 'bg-weather-cloudy-300',
+        textClass: 'text-weather-cloudy-700',
+        label: 'Checking…',
+        icon: <Loader2 className="w-5 h-5 animate-spin" />,
+      }
+  }
+}
+
+type ServiceCardStatus = 'ok' | 'down' | 'not-configured' | 'checking'
 
 function Row({
   label,
