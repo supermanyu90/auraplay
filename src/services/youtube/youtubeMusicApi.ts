@@ -72,6 +72,7 @@ function buildTrack(
     duration?: number
   },
 ): Track {
+  const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`
   return {
     id: videoId,
     title: opts.title ?? parseYouTubeTitle(snippet.title),
@@ -79,12 +80,13 @@ function buildTrack(
     album: opts.album ?? '',
     albumArt: pickThumbnail(snippet.thumbnails),
     duration: opts.duration ?? 0,
-    youtubeUrl: `https://www.youtube.com/watch?v=${videoId}`,
+    service: 'youtube',
+    externalUrl: youtubeUrl,
+    youtubeUrl,
     youtubeMusicUrl: `https://music.youtube.com/watch?v=${videoId}`,
     lastfmUrl: opts.lastfmUrl ?? '',
     playcount: opts.playcount ?? 0,
     tags: opts.tags ?? [],
-    service: 'youtube',
   }
 }
 

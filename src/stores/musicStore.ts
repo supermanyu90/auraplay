@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { YOUTUBE_DAILY_SEARCH_LIMIT } from '../config/constants'
-import { loadVideo, pause, play } from '../hooks/useYouTubePlayer'
+import { loadTrack, pause, play } from '../hooks/useYouTubePlayer'
 import { getRecommendations } from '../services/musicService'
 import { getQuotaUsed } from '../utils/quotaTracker'
 import type { MoodProfile, Track, WeatherCondition } from '../types'
@@ -87,7 +87,7 @@ export const useMusicStore = create<MusicState>((set, get) => ({
     })
 
     try {
-      const regionalPreference = usePreferencesStore.getState().regionalPreference
+      const prefs = usePreferencesStore.getState()
       const result = await getRecommendations(mood, {
         onProgress: (msg) => set({ loadingMessage: msg }),
         onTrackFound: (track) => {
@@ -96,7 +96,8 @@ export const useMusicStore = create<MusicState>((set, get) => ({
             currentTrackIndex: s.currentTrackIndex == null ? 0 : s.currentTrackIndex,
           }))
         },
-        regionalPreference,
+        regionalPreference: prefs.regionalPreference,
+        source: prefs.musicSource,
       })
 
       set((s) => ({
@@ -126,7 +127,7 @@ export const useMusicStore = create<MusicState>((set, get) => ({
     if (index < 0 || index >= tracks.length) return
     const track = tracks[index]
     set({ currentTrackIndex: index, isPlaying: true })
-    loadVideo(track.id)
+    loadTrack(track)
     play()
   },
 

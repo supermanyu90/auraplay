@@ -34,6 +34,10 @@ export interface MoodProfile {
   gradientColors: [string, string]
 }
 
+export type MusicSource = 'youtube' | 'jamendo' | 'audius'
+
+export type MusicSourcePreference = MusicSource | 'auto'
+
 export interface Track {
   id: string
   title: string
@@ -41,17 +45,22 @@ export interface Track {
   album: string
   albumArt: string
   duration: number
-  youtubeUrl: string
-  youtubeMusicUrl: string
+  service: MusicSource
+  externalUrl: string
+  // YouTube-only
+  youtubeUrl?: string
+  youtubeMusicUrl?: string
+  // Jamendo / Audius — direct HTML5 audio source
+  streamUrl?: string
+  // Last.fm metadata (YouTube path only, otherwise empty)
   lastfmUrl: string
   playcount: number
   tags: string[]
-  service: 'youtube'
 }
 
 export interface MusicResult {
   tracks: Track[]
-  source: 'lastfm+youtube'
+  source: MusicSource | 'lastfm+youtube'
   fromCache: boolean
   quotaUsed: number
   quotaRemaining: number
@@ -68,6 +77,7 @@ export interface UserPreferences {
   manualLocation?: string
   playbackPreference: PlaybackPreference
   regionalPreference: RegionalPreference
+  musicSource: MusicSourcePreference
 }
 
 export interface ListeningHistoryEntry {

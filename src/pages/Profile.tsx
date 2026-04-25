@@ -23,18 +23,24 @@ import { useAuthStore } from '../stores/authStore'
 import { useMusicStore } from '../stores/musicStore'
 import { usePreferencesStore } from '../stores/preferencesStore'
 import { useWeatherStore } from '../stores/weatherStore'
-import type { PlaybackPreference, RegionalPreference } from '../types'
+import type {
+  MusicSourcePreference,
+  PlaybackPreference,
+  RegionalPreference,
+} from '../types'
 
 export default function Profile() {
   const temperatureUnit = usePreferencesStore((s) => s.temperatureUnit)
   const theme = usePreferencesStore((s) => s.theme)
   const playbackPreference = usePreferencesStore((s) => s.playbackPreference)
   const regionalPreference = usePreferencesStore((s) => s.regionalPreference)
+  const musicSource = usePreferencesStore((s) => s.musicSource)
   const savedLocation = usePreferencesStore((s) => s.manualLocation)
   const setTemperatureUnit = usePreferencesStore((s) => s.setTemperatureUnit)
   const setTheme = usePreferencesStore((s) => s.setTheme)
   const setPlaybackPreference = usePreferencesStore((s) => s.setPlaybackPreference)
   const setRegionalPreference = usePreferencesStore((s) => s.setRegionalPreference)
+  const setMusicSource = usePreferencesStore((s) => s.setMusicSource)
   const setManualLocation = usePreferencesStore((s) => s.setManualLocation)
 
   const [locationInput, setLocationInput] = useState(savedLocation ?? '')
@@ -131,6 +137,43 @@ export default function Profile() {
               </div>
             }
           />
+
+          <div className="p-3 rounded-xl bg-white/70 border border-weather-cloudy-100">
+            <p className="font-medium text-weather-cloudy-900">Music source</p>
+            <p className="text-xs text-weather-cloudy-700">
+              Where playable tracks come from
+            </p>
+            <div className="mt-3 space-y-2">
+              <SourceOption
+                value="auto"
+                label="Auto"
+                sublabel="YouTube first, fall back to Jamendo or Audius if quota is gone"
+                selected={musicSource === 'auto'}
+                onSelect={() => setMusicSource('auto')}
+              />
+              <SourceOption
+                value="youtube"
+                label="YouTube"
+                sublabel="Full songs, mainstream catalog (100 searches/day cap)"
+                selected={musicSource === 'youtube'}
+                onSelect={() => setMusicSource('youtube')}
+              />
+              <SourceOption
+                value="jamendo"
+                label="Jamendo"
+                sublabel="Creative Commons full songs, indie catalog (free API key required)"
+                selected={musicSource === 'jamendo'}
+                onSelect={() => setMusicSource('jamendo')}
+              />
+              <SourceOption
+                value="audius"
+                label="Audius"
+                sublabel="Decentralized catalog, indie / hip-hop / electronic, no key required"
+                selected={musicSource === 'audius'}
+                onSelect={() => setMusicSource('audius')}
+              />
+            </div>
+          </div>
 
           <div className="p-3 rounded-xl bg-white/70 border border-weather-cloudy-100">
             <p className="font-medium text-weather-cloudy-900">Music taste</p>
@@ -456,6 +499,49 @@ function PillOption({
     >
       {label}
     </button>
+  )
+}
+
+interface SourceOptionProps {
+  value: MusicSourcePreference
+  label: string
+  sublabel: string
+  selected: boolean
+  onSelect: () => void
+}
+
+function SourceOption({ value, label, sublabel, selected, onSelect }: SourceOptionProps) {
+  return (
+    <label
+      className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${
+        selected
+          ? 'bg-white border-weather-cloudy-300 shadow-sm'
+          : 'bg-white/40 border-weather-cloudy-100 hover:bg-white/70'
+      }`}
+    >
+      <input
+        type="radio"
+        name="musicSource"
+        value={value}
+        checked={selected}
+        onChange={onSelect}
+        className="sr-only"
+      />
+      <span
+        className={`w-5 h-5 rounded-full flex-none border-2 flex items-center justify-center transition-colors ${
+          selected ? 'border-weather-cloudy-900' : 'border-weather-cloudy-300'
+        }`}
+        aria-hidden="true"
+      >
+        {selected ? (
+          <span className="w-2.5 h-2.5 rounded-full bg-weather-cloudy-900" />
+        ) : null}
+      </span>
+      <span className="flex-1 min-w-0">
+        <span className="block font-medium text-weather-cloudy-900">{label}</span>
+        <span className="block text-xs text-weather-cloudy-700">{sublabel}</span>
+      </span>
+    </label>
   )
 }
 

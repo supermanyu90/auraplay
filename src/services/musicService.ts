@@ -1,4 +1,6 @@
-import { CACHE_DURATION_MS, MAX_TRACKS } from '../config/constants'
+import { CACHE_DURATION_MS, JAMENDO_CLIENT_ID, MAX_TRACKS } from '../config/constants'
+import * as audius from './audius/audiusApi'
+import * as jamendo from './jamendo/jamendoApi'
 import type { LastfmTrack } from './lastfm/lastfmApi'
 import { getRecommendationsForMood } from './lastfm/lastfmApi'
 import { searchBatch, searchYouTubeByKeywords } from './youtube/youtubeMusicApi'
@@ -6,7 +8,14 @@ import { cacheGet, cacheGetStale, cacheSet } from '../utils/cache'
 import { deduplicateTracks } from '../utils/deduplication'
 import { applyRegionalPreference } from '../utils/moodMapper'
 import { getQuotaRemaining, getQuotaUsed, isQuotaExceeded } from '../utils/quotaTracker'
-import type { MoodProfile, MusicResult, RegionalPreference, Track } from '../types'
+import type {
+  MoodProfile,
+  MusicResult,
+  MusicSource,
+  MusicSourcePreference,
+  RegionalPreference,
+  Track,
+} from '../types'
 
 const TRACKS_CACHE_PREFIX = 'auraplay:tracks:'
 
@@ -15,10 +24,127 @@ export interface GetRecommendationsOptions {
   onTrackFound?: (track: Track) => void
   onDurationResolved?: (videoId: string, durationMs: number) => void
   regionalPreference?: RegionalPreference
+  source?: MusicSourcePreference
+}
+
+interface RunResult {
+  tracks: Track[]
+  source: MusicSource | 'lastfm+youtube'
+  errors: string[]
 }
 
 function quotaSnapshot(): { used: number; remaining: number } {
   return { used: getQuotaUsed(), remaining: getQuotaRemaining() }
+}
+
+function emitTracks(tracks: Track[], onTrackFound?: (t: Track) => void) {
+  if (!onTrackFound) return
+  for (const t of tracks) onTrackFound(t)
+}
+
+async function runYouTube(
+  mood: MoodProfile,
+  opts: GetRecommendationsOptions,
+  errors: string[],
+): Promise<RunResult> {
+  const onProgress = opts.onProgress ?? (() => {})
+
+  onProgress('Finding matching songs...')
+  let lastfmTracks: LastfmTrack[] = []
+  let lastfmFailed = false
+  try {
+    lastfmTracks = await getRecommendationsForMood(mood, 30)
+  } catch (err) {
+    lastfmFailed = true
+    const msg = err instanceof Error ? err.message : String(err)
+    errors.push(`Last.fm unavailable: ${msg}`)
+  }
+
+  const deduped = deduplicateTracks(lastfmTracks).slice(0, MAX_TRACKS)
+  let tracks: Track[] = []
+
+  if (deduped.length > 0) {
+    onProgress('Searching YouTube...')
+    const result = await searchBatch(deduped, MAX_TRACKS, {
+      onTrackFound: opts.onTrackFound,
+      onDurationResolved: opts.onDurationResolved,
+    })
+    tracks = result.tracks
+    if (result.missing > 0) errors.push(`${result.missing} tracks not found on YouTube.`)
+    if (result.quotaStopped)
+      errors.push('Daily YouTube search limit reached partway through.')
+  } else {
+    onProgress('Searching YouTube by genre...')
+    if (!lastfmFailed)
+      errors.push('Last.fm returned no tracks; falling back to YouTube genre search.')
+    tracks = await searchYouTubeByKeywords(mood.genres.slice(0, 2))
+    emitTracks(tracks, opts.onTrackFound)
+    if (tracks.length === 0) errors.push('YouTube genre search returned nothing.')
+  }
+
+  return { tracks, source: 'lastfm+youtube', errors }
+}
+
+async function runJamendo(
+  mood: MoodProfile,
+  opts: GetRecommendationsOptions,
+  errors: string[],
+): Promise<RunResult> {
+  const onProgress = opts.onProgress ?? (() => {})
+  if (!JAMENDO_CLIENT_ID) {
+    errors.push('Jamendo client ID is missing; set VITE_JAMENDO_CLIENT_ID to enable.')
+    return { tracks: [], source: 'jamendo', errors }
+  }
+  onProgress('Searching Jamendo (Creative Commons)...')
+  try {
+    const tracks = await jamendo.getRecommendationsForMood(mood, MAX_TRACKS)
+    emitTracks(tracks, opts.onTrackFound)
+    if (tracks.length === 0) errors.push('Jamendo returned no tracks for this mood.')
+    return { tracks, source: 'jamendo', errors }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    errors.push(`Jamendo failed: ${msg}`)
+    return { tracks: [], source: 'jamendo', errors }
+  }
+}
+
+async function runAudius(
+  mood: MoodProfile,
+  opts: GetRecommendationsOptions,
+  errors: string[],
+): Promise<RunResult> {
+  const onProgress = opts.onProgress ?? (() => {})
+  onProgress('Searching Audius (decentralized)...')
+  try {
+    const tracks = await audius.getRecommendationsForMood(mood, MAX_TRACKS)
+    emitTracks(tracks, opts.onTrackFound)
+    if (tracks.length === 0) errors.push('Audius returned no tracks for this mood.')
+    return { tracks, source: 'audius', errors }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    errors.push(`Audius failed: ${msg}`)
+    return { tracks: [], source: 'audius', errors }
+  }
+}
+
+async function runAuto(
+  mood: MoodProfile,
+  opts: GetRecommendationsOptions,
+  errors: string[],
+): Promise<RunResult> {
+  if (!isQuotaExceeded()) {
+    const yt = await runYouTube(mood, opts, errors)
+    if (yt.tracks.length > 0) return yt
+  } else {
+    errors.push('YouTube daily quota exhausted; trying alternative sources.')
+  }
+
+  if (JAMENDO_CLIENT_ID) {
+    const j = await runJamendo(mood, opts, errors)
+    if (j.tracks.length > 0) return j
+  }
+
+  return runAudius(mood, opts, errors)
 }
 
 export async function getRecommendations(
@@ -27,19 +153,20 @@ export async function getRecommendations(
 ): Promise<MusicResult> {
   const onProgress = opts.onProgress ?? (() => {})
   const regional = opts.regionalPreference ?? 'global'
+  const source: MusicSourcePreference = opts.source ?? 'auto'
   const adjustedMood = applyRegionalPreference(mood, regional)
-  const cacheKey = `${TRACKS_CACHE_PREFIX}${mood.condition}:${regional}`
+  const cacheKey = `${TRACKS_CACHE_PREFIX}${mood.condition}:${regional}:${source}`
   const errors: string[] = []
 
   onProgress('Reading the weather...')
 
   const fresh = cacheGet<Track[]>(cacheKey)
   if (fresh && fresh.length > 0) {
-    for (const track of fresh) opts.onTrackFound?.(track)
+    emitTracks(fresh, opts.onTrackFound)
     const q = quotaSnapshot()
     return {
       tracks: fresh,
-      source: 'lastfm+youtube',
+      source: fresh[0]?.service ?? 'youtube',
       fromCache: true,
       quotaUsed: q.used,
       quotaRemaining: q.remaining,
@@ -47,16 +174,16 @@ export async function getRecommendations(
     }
   }
 
-  if (isQuotaExceeded()) {
+  if (source === 'youtube' && isQuotaExceeded()) {
     const stale = cacheGetStale<Track[]>(cacheKey)
-    if (stale) for (const track of stale) opts.onTrackFound?.(track)
+    if (stale) emitTracks(stale, opts.onTrackFound)
     const message =
       stale && stale.length > 0
         ? 'Daily search limit reached. Showing saved recommendations.'
-        : 'Daily search limit reached. Fresh results available tomorrow.'
+        : 'Daily search limit reached. Pick Jamendo or Audius in Profile, or try again tomorrow.'
     return {
       tracks: stale ?? [],
-      source: 'lastfm+youtube',
+      source: 'youtube',
       fromCache: true,
       quotaUsed: getQuotaUsed(),
       quotaRemaining: 0,
@@ -64,66 +191,42 @@ export async function getRecommendations(
     }
   }
 
-  onProgress('Finding matching songs...')
-
-  let lastfmTracks: LastfmTrack[] = []
-  let lastfmFailed = false
-  try {
-    lastfmTracks = await getRecommendationsForMood(adjustedMood, 30)
-  } catch (err) {
-    lastfmFailed = true
-    const msg = err instanceof Error ? err.message : String(err)
-    errors.push(`Last.fm unavailable: ${msg}`)
-  }
-
-  const deduped = deduplicateTracks(lastfmTracks).slice(0, MAX_TRACKS)
-  let finalTracks: Track[] = []
-
-  if (deduped.length > 0) {
-    onProgress('Searching YouTube...')
-    const result = await searchBatch(deduped, MAX_TRACKS, {
-      onTrackFound: opts.onTrackFound,
-      onDurationResolved: opts.onDurationResolved,
-    })
-    finalTracks = result.tracks
-    if (result.missing > 0) {
-      errors.push(`${result.missing} tracks not found on YouTube.`)
-    }
-    if (result.quotaStopped) {
-      errors.push('Daily YouTube search limit reached partway through.')
-    }
-  } else {
-    onProgress('Searching YouTube by genre...')
-    if (!lastfmFailed) {
-      errors.push('Last.fm returned no tracks; falling back to YouTube genre search.')
-    }
-    finalTracks = await searchYouTubeByKeywords(adjustedMood.genres.slice(0, 2))
-    for (const track of finalTracks) opts.onTrackFound?.(track)
-    if (finalTracks.length === 0) {
-      errors.push('YouTube genre search returned nothing.')
-    }
+  let outcome: RunResult
+  switch (source) {
+    case 'youtube':
+      outcome = await runYouTube(adjustedMood, opts, errors)
+      break
+    case 'jamendo':
+      outcome = await runJamendo(adjustedMood, opts, errors)
+      break
+    case 'audius':
+      outcome = await runAudius(adjustedMood, opts, errors)
+      break
+    case 'auto':
+    default:
+      outcome = await runAuto(adjustedMood, opts, errors)
   }
 
   onProgress('Almost ready...')
 
-  if (finalTracks.length > 0) {
-    cacheSet(cacheKey, finalTracks, CACHE_DURATION_MS)
+  if (outcome.tracks.length > 0) {
+    cacheSet(cacheKey, outcome.tracks, CACHE_DURATION_MS)
   } else {
     const stale = cacheGetStale<Track[]>(cacheKey)
     if (stale && stale.length > 0) {
-      finalTracks = stale
-      for (const track of stale) opts.onTrackFound?.(track)
+      outcome.tracks = stale
+      emitTracks(stale, opts.onTrackFound)
       errors.push('Live fetch failed; showing previously saved recommendations.')
     }
   }
 
   const q = quotaSnapshot()
   return {
-    tracks: finalTracks,
-    source: 'lastfm+youtube',
+    tracks: outcome.tracks,
+    source: outcome.source,
     fromCache: false,
     quotaUsed: q.used,
     quotaRemaining: q.remaining,
-    errors,
+    errors: outcome.errors,
   }
 }

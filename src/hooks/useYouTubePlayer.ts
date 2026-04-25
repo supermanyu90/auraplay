@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { Track } from '../types'
 
 export interface PlayerState {
   isReady: boolean
@@ -76,11 +77,16 @@ declare global {
   }
 }
 
-let playerInstance: IFramePlayer | null = null
+type Backend = 'youtube' | 'audio'
+
+let ytPlayer: IFramePlayer | null = null
+let audioElement: HTMLAudioElement | null = null
+let activeBackend: Backend | null = null
 let pollInterval: number | null = null
 let apiPromise: Promise<IFrameAPI> | null = null
 let onTrackEndedHandler: (() => void) | null = null
 let onPlayerErrorHandler: ((code: number) => void) | null = null
+let ytReady = false
 
 const SKIPPABLE_ERROR_CODES = new Set([2, 5, 100, 101, 150])
 
@@ -107,14 +113,18 @@ function loadIframeAPI(): Promise<IFrameAPI> {
 function startPolling() {
   stopPolling()
   pollInterval = window.setInterval(() => {
-    const player = playerInstance
-    if (!player) return
-    try {
-      const currentTime = player.getCurrentTime()
-      const duration = player.getDuration()
+    if (activeBackend === 'youtube' && ytPlayer) {
+      try {
+        const currentTime = ytPlayer.getCurrentTime()
+        const duration = ytPlayer.getDuration()
+        usePlayerStore.getState()._setState({ currentTime, duration })
+      } catch {
+        // ignore
+      }
+    } else if (activeBackend === 'audio' && audioElement) {
+      const currentTime = audioElement.currentTime
+      const duration = Number.isFinite(audioElement.duration) ? audioElement.duration : 0
       usePlayerStore.getState()._setState({ currentTime, duration })
-    } catch {
-      // player may be transitioning — ignore
     }
   }, 500)
 }
@@ -126,11 +136,64 @@ function stopPolling() {
   }
 }
 
-export async function initializePlayer(hostEl: HTMLElement): Promise<void> {
-  if (playerInstance) return
+function markReadyIfPossible() {
+  if (ytReady && audioElement) {
+    usePlayerStore.getState()._setState({ isReady: true })
+  }
+}
+
+function attachAudioListeners(el: HTMLAudioElement) {
+  el.addEventListener('playing', () => {
+    if (activeBackend !== 'audio') return
+    usePlayerStore.getState()._setState({ isPlaying: true, isBuffering: false, error: null })
+    startPolling()
+  })
+  el.addEventListener('pause', () => {
+    if (activeBackend !== 'audio') return
+    usePlayerStore.getState()._setState({ isPlaying: false })
+    stopPolling()
+  })
+  el.addEventListener('waiting', () => {
+    if (activeBackend !== 'audio') return
+    usePlayerStore.getState()._setState({ isBuffering: true })
+  })
+  el.addEventListener('loadedmetadata', () => {
+    if (activeBackend !== 'audio') return
+    const duration = Number.isFinite(el.duration) ? el.duration : 0
+    usePlayerStore.getState()._setState({ duration })
+  })
+  el.addEventListener('ended', () => {
+    if (activeBackend !== 'audio') return
+    usePlayerStore.getState()._setState({ isPlaying: false, currentTime: 0 })
+    stopPolling()
+    onTrackEndedHandler?.()
+  })
+  el.addEventListener('error', () => {
+    if (activeBackend !== 'audio') return
+    const code = el.error?.code ?? 0
+    usePlayerStore
+      .getState()
+      ._setState({ error: describeAudioError(code), isPlaying: false, isBuffering: false })
+    stopPolling()
+    onPlayerErrorHandler?.(code)
+    onTrackEndedHandler?.()
+  })
+}
+
+export async function initializePlayer(
+  ytHostEl: HTMLElement,
+  audioEl: HTMLAudioElement,
+): Promise<void> {
+  if (audioElement !== audioEl) {
+    audioElement = audioEl
+    attachAudioListeners(audioEl)
+  }
+  markReadyIfPossible()
+
+  if (ytPlayer) return
   const YT = await loadIframeAPI()
 
-  playerInstance = new YT.Player(hostEl, {
+  ytPlayer = new YT.Player(ytHostEl, {
     width: '100%',
     height: '100%',
     playerVars: {
@@ -154,9 +217,12 @@ export async function initializePlayer(hostEl: HTMLElement): Promise<void> {
             return 100
           }
         })()
-        usePlayerStore.getState()._setState({ isReady: true, volume })
+        usePlayerStore.getState()._setState({ volume })
+        ytReady = true
+        markReadyIfPossible()
       },
       onStateChange: (e) => {
+        if (activeBackend !== 'youtube') return
         const setState = usePlayerStore.getState()._setState
         switch (e.data) {
           case YT.PlayerState.PLAYING:
@@ -178,14 +244,13 @@ export async function initializePlayer(hostEl: HTMLElement): Promise<void> {
         }
       },
       onError: (e) => {
+        if (activeBackend !== 'youtube') return
         const code = e.data
         const setState = usePlayerStore.getState()._setState
         setState({ error: describeYouTubeError(code), isPlaying: false, isBuffering: false })
         stopPolling()
         onPlayerErrorHandler?.(code)
-        if (SKIPPABLE_ERROR_CODES.has(code)) {
-          onTrackEndedHandler?.()
-        }
+        if (SKIPPABLE_ERROR_CODES.has(code)) onTrackEndedHandler?.()
       },
     },
   })
@@ -207,6 +272,21 @@ function describeYouTubeError(code: number): string {
   }
 }
 
+function describeAudioError(code: number): string {
+  switch (code) {
+    case 1:
+      return 'Audio playback aborted — skipping.'
+    case 2:
+      return 'Network error fetching audio — skipping.'
+    case 3:
+      return 'Audio decoding error — skipping.'
+    case 4:
+      return 'Audio source not supported — skipping.'
+    default:
+      return 'Audio playback error — skipping.'
+  }
+}
+
 export function setOnTrackEnded(handler: (() => void) | null): void {
   onTrackEndedHandler = handler
 }
@@ -215,68 +295,139 @@ export function setOnPlayerError(handler: ((code: number) => void) | null): void
   onPlayerErrorHandler = handler
 }
 
-export function loadVideo(videoId: string): void {
-  if (!playerInstance) {
-    usePlayerStore.getState()._setState({ videoId })
+function stopOtherBackend(target: Backend) {
+  if (target !== 'youtube' && ytPlayer) {
+    try {
+      ytPlayer.stopVideo()
+    } catch {
+      // ignore
+    }
+  }
+  if (target !== 'audio' && audioElement) {
+    audioElement.pause()
+  }
+}
+
+export function loadTrack(track: Track | null): void {
+  if (!track) {
+    stopOtherBackend('youtube')
+    stopOtherBackend('audio')
+    activeBackend = null
+    usePlayerStore
+      .getState()
+      ._setState({ videoId: null, isPlaying: false, currentTime: 0, duration: 0 })
+    stopPolling()
     return
   }
+
   const { hasUserInteracted } = usePlayerStore.getState()
-  usePlayerStore.getState()._setState({ videoId, error: null, currentTime: 0, duration: 0 })
-  try {
-    if (hasUserInteracted) {
-      playerInstance.loadVideoById(videoId)
-    } else {
-      playerInstance.cueVideoById(videoId)
+  usePlayerStore
+    .getState()
+    ._setState({ videoId: track.id, error: null, currentTime: 0, duration: 0 })
+
+  if (track.service === 'youtube') {
+    stopOtherBackend('youtube')
+    activeBackend = 'youtube'
+    if (!ytPlayer) return
+    try {
+      const ytId = track.id.startsWith('youtube:') ? track.id.slice('youtube:'.length) : track.id
+      if (hasUserInteracted) ytPlayer.loadVideoById(ytId)
+      else ytPlayer.cueVideoById(ytId)
+    } catch (err) {
+      console.warn('YouTube: loadTrack failed:', err)
     }
-  } catch (err) {
-    console.warn('YouTube: loadVideo failed:', err)
+    return
+  }
+
+  if (!track.streamUrl || !audioElement) {
+    usePlayerStore.getState()._setState({ error: 'No playable stream for this track.' })
+    onTrackEndedHandler?.()
+    return
+  }
+  stopOtherBackend('audio')
+  activeBackend = 'audio'
+  audioElement.src = track.streamUrl
+  audioElement.load()
+  if (hasUserInteracted) {
+    audioElement.play().catch((err) => {
+      console.warn('Audio: play failed:', err)
+    })
   }
 }
 
 export function play(): void {
   usePlayerStore.getState()._setState({ hasUserInteracted: true, error: null })
-  try {
-    playerInstance?.playVideo()
-  } catch (err) {
-    console.warn('YouTube: play failed:', err)
+  if (activeBackend === 'youtube') {
+    try {
+      ytPlayer?.playVideo()
+    } catch (err) {
+      console.warn('YouTube: play failed:', err)
+    }
+  } else if (activeBackend === 'audio' && audioElement) {
+    audioElement.play().catch((err) => {
+      console.warn('Audio: play failed:', err)
+    })
   }
 }
 
 export function pause(): void {
-  try {
-    playerInstance?.pauseVideo()
-  } catch (err) {
-    console.warn('YouTube: pause failed:', err)
+  if (activeBackend === 'youtube') {
+    try {
+      ytPlayer?.pauseVideo()
+    } catch (err) {
+      console.warn('YouTube: pause failed:', err)
+    }
+  } else if (activeBackend === 'audio' && audioElement) {
+    audioElement.pause()
   }
 }
 
 export function seekTo(seconds: number): void {
-  try {
-    playerInstance?.seekTo(Math.max(0, seconds), true)
-    usePlayerStore.getState()._setState({ currentTime: seconds })
-  } catch (err) {
-    console.warn('YouTube: seekTo failed:', err)
+  const safe = Math.max(0, seconds)
+  if (activeBackend === 'youtube') {
+    try {
+      ytPlayer?.seekTo(safe, true)
+    } catch (err) {
+      console.warn('YouTube: seekTo failed:', err)
+    }
+  } else if (activeBackend === 'audio' && audioElement) {
+    try {
+      audioElement.currentTime = safe
+    } catch (err) {
+      console.warn('Audio: seekTo failed:', err)
+    }
   }
+  usePlayerStore.getState()._setState({ currentTime: safe })
 }
 
 export function setVolume(level: number): void {
   const clamped = Math.max(0, Math.min(100, Math.round(level)))
   usePlayerStore.getState()._setState({ volume: clamped })
-  try {
-    playerInstance?.setVolume(clamped)
-  } catch (err) {
-    console.warn('YouTube: setVolume failed:', err)
+  if (activeBackend === 'youtube') {
+    try {
+      ytPlayer?.setVolume(clamped)
+    } catch (err) {
+      console.warn('YouTube: setVolume failed:', err)
+    }
+  } else if (activeBackend === 'audio' && audioElement) {
+    audioElement.volume = clamped / 100
   }
 }
 
 export function destroyPlayer(): void {
   stopPolling()
   try {
-    playerInstance?.destroy()
+    ytPlayer?.destroy()
   } catch {
     // ignore
   }
-  playerInstance = null
+  ytPlayer = null
+  if (audioElement) {
+    audioElement.pause()
+    audioElement.removeAttribute('src')
+  }
+  activeBackend = null
+  ytReady = false
   usePlayerStore.getState()._setState({
     isReady: false,
     isPlaying: false,
@@ -288,7 +439,7 @@ export function destroyPlayer(): void {
 }
 
 export function useYouTubePlayer(): PlayerState & {
-  loadVideo: (videoId: string) => void
+  loadTrack: (track: Track | null) => void
   play: () => void
   pause: () => void
   seekTo: (seconds: number) => void
@@ -297,7 +448,7 @@ export function useYouTubePlayer(): PlayerState & {
   const state = usePlayerStore()
   return {
     ...state,
-    loadVideo,
+    loadTrack,
     play,
     pause,
     seekTo,

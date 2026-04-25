@@ -46,12 +46,21 @@ Two free APIs. That's the entire stack.
 | Area | Service | Plan |
 | --- | --- | --- |
 | Discovery | Last.fm API | Free, no user auth |
-| Playback | YouTube IFrame Player | Free, 10,000 units/day |
+| Playback (primary) | YouTube IFrame Player | Free, 10,000 units/day |
+| Playback (fallback) | Jamendo API | Free, ~35k req/month, Creative Commons full songs |
+| Playback (fallback) | Audius API | Free, no key, decentralized indie/HH/EDM full songs |
 | Weather | OpenWeatherMap | Free tier |
 | Frontend | React 18 + TypeScript + Vite | — |
 | Styling | Tailwind CSS (custom weather palette) | — |
 | State | Zustand | — |
 | Animation | Framer Motion | — |
+
+### Music source modes (Profile → Music source)
+
+- **Auto** (default) — YouTube first; if the daily YouTube quota is exhausted, fall through to Jamendo, then Audius.
+- **YouTube** — Last.fm-curated mainstream tracks via YouTube IFrame.
+- **Jamendo** — Creative Commons full songs (indie catalog). Requires `VITE_JAMENDO_CLIENT_ID` from https://devportal.jamendo.com/.
+- **Audius** — Decentralized full songs via discovery nodes. No API key required.
 
 ---
 

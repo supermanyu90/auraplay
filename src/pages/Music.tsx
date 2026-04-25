@@ -22,12 +22,13 @@ export default function Music() {
   const fetchRecommendations = useMusicStore((s) => s.fetchRecommendations)
   const playTrack = useMusicStore((s) => s.playTrack)
   const regionalPreference = usePreferencesStore((s) => s.regionalPreference)
+  const musicSource = usePreferencesStore((s) => s.musicSource)
 
   useEffect(() => {
     if (moodProfile) {
       void fetchRecommendations(moodProfile)
     }
-  }, [moodProfile, regionalPreference, fetchRecommendations])
+  }, [moodProfile, regionalPreference, musicSource, fetchRecommendations])
 
   if (!moodProfile) {
     return (

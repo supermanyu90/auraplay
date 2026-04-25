@@ -8,7 +8,7 @@ import { MiniPlayer } from '../music/MiniPlayer'
 import { NowPlaying } from '../music/NowPlaying'
 import { PlayerHost } from '../music/PlayerHost'
 import {
-  loadVideo,
+  loadTrack,
   setOnPlayerError,
   setOnTrackEnded,
   useYouTubePlayer,
@@ -38,7 +38,7 @@ export default function Layout() {
     const track = currentTrackIndex != null ? tracks[currentTrackIndex] : null
     if (!track || !isReady) return
     if (videoId !== track.id) {
-      loadVideo(track.id)
+      loadTrack(track)
     }
   }, [currentTrackIndex, tracks, isReady, videoId])
 
