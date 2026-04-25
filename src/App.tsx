@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import { Analytics } from '@vercel/analytics/react'
 import Layout from './components/layout/Layout'
 import Auth from './pages/Auth'
 import Home from './pages/Home'
@@ -26,6 +27,7 @@ function App() {
           <Route path="/auth" element={<Auth />} />
         </Route>
       </Routes>
+      <Analytics />
     </BrowserRouter>
   )
 }
