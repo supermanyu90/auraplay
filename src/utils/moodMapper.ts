@@ -1,4 +1,40 @@
-import type { MoodProfile, WeatherCondition, WeatherData } from '../types'
+import type {
+  MoodProfile,
+  RegionalPreference,
+  WeatherCondition,
+  WeatherData,
+} from '../types'
+
+const INDIAN_GENRES: Record<WeatherCondition, string[]> = {
+  sunny: ['bollywood', 'punjabi pop', 'filmi', 'hindi pop'],
+  cloudy: ['hindi indie', 'indian indie', 'hindi acoustic'],
+  rainy: ['ghazal', 'sufi', 'hindi acoustic'],
+  stormy: ['hindi rock', 'punjabi rap', 'indian metal'],
+  snowy: ['indian classical', 'hindustani classical', 'carnatic'],
+  foggy: ['sufi', 'qawwali', 'indian ambient'],
+  windy: ['bhangra', 'punjabi folk', 'folk india'],
+  scorching: ['bhangra', 'bollywood dance', 'punjabi'],
+}
+
+export function applyRegionalPreference(
+  mood: MoodProfile,
+  preference: RegionalPreference,
+): MoodProfile {
+  if (preference === 'global') return mood
+  const indian = INDIAN_GENRES[mood.condition] ?? []
+  if (indian.length === 0) return mood
+  if (preference === 'indian') {
+    return { ...mood, genres: [...indian] }
+  }
+  // 'mixed' — interleave so the first 3 tags yield 2 Indian + 1 Western.
+  const mixed: string[] = []
+  const max = Math.max(indian.length, mood.genres.length)
+  for (let i = 0; i < max; i++) {
+    if (indian[i]) mixed.push(indian[i])
+    if (mood.genres[i]) mixed.push(mood.genres[i])
+  }
+  return { ...mood, genres: mixed }
+}
 
 const MOODS: Record<WeatherCondition, Omit<MoodProfile, 'condition'>> = {
   sunny: {

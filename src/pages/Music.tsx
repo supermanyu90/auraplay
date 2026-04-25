@@ -4,6 +4,7 @@ import { ArrowLeft } from 'lucide-react'
 import { TrackList } from '../components/music/TrackList'
 import { WeatherCard } from '../components/weather/WeatherCard'
 import { useMusicStore } from '../stores/musicStore'
+import { usePreferencesStore } from '../stores/preferencesStore'
 import { useWeatherStore } from '../stores/weatherStore'
 
 export default function Music() {
@@ -20,12 +21,13 @@ export default function Music() {
   const quotaLimit = useMusicStore((s) => s.youtubeQuotaLimit)
   const fetchRecommendations = useMusicStore((s) => s.fetchRecommendations)
   const playTrack = useMusicStore((s) => s.playTrack)
+  const regionalPreference = usePreferencesStore((s) => s.regionalPreference)
 
   useEffect(() => {
     if (moodProfile) {
       void fetchRecommendations(moodProfile)
     }
-  }, [moodProfile, fetchRecommendations])
+  }, [moodProfile, regionalPreference, fetchRecommendations])
 
   if (!moodProfile) {
     return (

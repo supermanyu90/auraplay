@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { PlaybackPreference, UserPreferences } from '../types'
+import type { PlaybackPreference, RegionalPreference, UserPreferences } from '../types'
 
 const PREFS_KEY = 'auraplay:preferences'
 
@@ -7,6 +7,7 @@ const DEFAULTS: UserPreferences = {
   temperatureUnit: 'C',
   theme: 'auto',
   playbackPreference: 'youtube',
+  regionalPreference: 'global',
 }
 
 function load(): UserPreferences {
@@ -33,6 +34,7 @@ interface PreferencesStore extends UserPreferences {
   setTheme: (theme: 'auto' | 'light' | 'dark') => void
   setManualLocation: (location: string | undefined) => void
   setPlaybackPreference: (pref: PlaybackPreference) => void
+  setRegionalPreference: (pref: RegionalPreference) => void
   reset: () => void
 }
 
@@ -53,6 +55,10 @@ export const usePreferencesStore = create<PreferencesStore>((set, get) => ({
   },
   setPlaybackPreference(pref) {
     set({ playbackPreference: pref })
+    save(get())
+  },
+  setRegionalPreference(pref) {
+    set({ regionalPreference: pref })
     save(get())
   },
   reset() {

@@ -4,8 +4,9 @@ import { getRecommendationsForMood } from './lastfm/lastfmApi'
 import { searchBatch, searchYouTubeByKeywords } from './youtube/youtubeMusicApi'
 import { cacheGet, cacheGetStale, cacheSet } from '../utils/cache'
 import { deduplicateTracks } from '../utils/deduplication'
+import { applyRegionalPreference } from '../utils/moodMapper'
 import { getQuotaRemaining, getQuotaUsed, isQuotaExceeded } from '../utils/quotaTracker'
-import type { MoodProfile, MusicResult, Track } from '../types'
+import type { MoodProfile, MusicResult, RegionalPreference, Track } from '../types'
 
 const TRACKS_CACHE_PREFIX = 'auraplay:tracks:'
 
@@ -13,6 +14,7 @@ export interface GetRecommendationsOptions {
   onProgress?: (message: string) => void
   onTrackFound?: (track: Track) => void
   onDurationResolved?: (videoId: string, durationMs: number) => void
+  regionalPreference?: RegionalPreference
 }
 
 function quotaSnapshot(): { used: number; remaining: number } {
@@ -24,7 +26,9 @@ export async function getRecommendations(
   opts: GetRecommendationsOptions = {},
 ): Promise<MusicResult> {
   const onProgress = opts.onProgress ?? (() => {})
-  const cacheKey = `${TRACKS_CACHE_PREFIX}${mood.condition}`
+  const regional = opts.regionalPreference ?? 'global'
+  const adjustedMood = applyRegionalPreference(mood, regional)
+  const cacheKey = `${TRACKS_CACHE_PREFIX}${mood.condition}:${regional}`
   const errors: string[] = []
 
   onProgress('Reading the weather...')
@@ -65,7 +69,7 @@ export async function getRecommendations(
   let lastfmTracks: LastfmTrack[] = []
   let lastfmFailed = false
   try {
-    lastfmTracks = await getRecommendationsForMood(mood, 30)
+    lastfmTracks = await getRecommendationsForMood(adjustedMood, 30)
   } catch (err) {
     lastfmFailed = true
     const msg = err instanceof Error ? err.message : String(err)
@@ -93,7 +97,7 @@ export async function getRecommendations(
     if (!lastfmFailed) {
       errors.push('Last.fm returned no tracks; falling back to YouTube genre search.')
     }
-    finalTracks = await searchYouTubeByKeywords(mood.genres.slice(0, 2))
+    finalTracks = await searchYouTubeByKeywords(adjustedMood.genres.slice(0, 2))
     for (const track of finalTracks) opts.onTrackFound?.(track)
     if (finalTracks.length === 0) {
       errors.push('YouTube genre search returned nothing.')

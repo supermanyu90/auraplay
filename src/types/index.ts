@@ -60,11 +60,14 @@ export interface MusicResult {
 
 export type PlaybackPreference = 'youtube' | 'apple-music'
 
+export type RegionalPreference = 'global' | 'indian' | 'mixed'
+
 export interface UserPreferences {
   temperatureUnit: 'C' | 'F'
   theme: 'auto' | 'light' | 'dark'
   manualLocation?: string
   playbackPreference: PlaybackPreference
+  regionalPreference: RegionalPreference
 }
 
 export interface ListeningHistoryEntry {

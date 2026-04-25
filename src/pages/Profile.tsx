@@ -23,16 +23,18 @@ import { useAuthStore } from '../stores/authStore'
 import { useMusicStore } from '../stores/musicStore'
 import { usePreferencesStore } from '../stores/preferencesStore'
 import { useWeatherStore } from '../stores/weatherStore'
-import type { PlaybackPreference } from '../types'
+import type { PlaybackPreference, RegionalPreference } from '../types'
 
 export default function Profile() {
   const temperatureUnit = usePreferencesStore((s) => s.temperatureUnit)
   const theme = usePreferencesStore((s) => s.theme)
   const playbackPreference = usePreferencesStore((s) => s.playbackPreference)
+  const regionalPreference = usePreferencesStore((s) => s.regionalPreference)
   const savedLocation = usePreferencesStore((s) => s.manualLocation)
   const setTemperatureUnit = usePreferencesStore((s) => s.setTemperatureUnit)
   const setTheme = usePreferencesStore((s) => s.setTheme)
   const setPlaybackPreference = usePreferencesStore((s) => s.setPlaybackPreference)
+  const setRegionalPreference = usePreferencesStore((s) => s.setRegionalPreference)
   const setManualLocation = usePreferencesStore((s) => s.setManualLocation)
 
   const [locationInput, setLocationInput] = useState(savedLocation ?? '')
@@ -129,6 +131,36 @@ export default function Profile() {
               </div>
             }
           />
+
+          <div className="p-3 rounded-xl bg-white/70 border border-weather-cloudy-100">
+            <p className="font-medium text-weather-cloudy-900">Music taste</p>
+            <p className="text-xs text-weather-cloudy-700">
+              Which kinds of songs show up in recommendations
+            </p>
+            <div className="mt-3 space-y-2">
+              <RegionOption
+                value="global"
+                label="Global"
+                sublabel="Western genres — indie, rock, electronic, etc."
+                selected={regionalPreference === 'global'}
+                onSelect={() => setRegionalPreference('global')}
+              />
+              <RegionOption
+                value="indian"
+                label="Indian"
+                sublabel="Bollywood, ghazals, classical, bhangra, Punjabi, Sufi"
+                selected={regionalPreference === 'indian'}
+                onSelect={() => setRegionalPreference('indian')}
+              />
+              <RegionOption
+                value="mixed"
+                label="Mixed"
+                sublabel="A blend of both"
+                selected={regionalPreference === 'mixed'}
+                onSelect={() => setRegionalPreference('mixed')}
+              />
+            </div>
+          </div>
 
           <div className="p-3 rounded-xl bg-white/70 border border-weather-cloudy-100">
             <p className="font-medium text-weather-cloudy-900">Default playback</p>
@@ -424,6 +456,49 @@ function PillOption({
     >
       {label}
     </button>
+  )
+}
+
+interface RegionOptionProps {
+  value: RegionalPreference
+  label: string
+  sublabel: string
+  selected: boolean
+  onSelect: () => void
+}
+
+function RegionOption({ value, label, sublabel, selected, onSelect }: RegionOptionProps) {
+  return (
+    <label
+      className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${
+        selected
+          ? 'bg-white border-weather-cloudy-300 shadow-sm'
+          : 'bg-white/40 border-weather-cloudy-100 hover:bg-white/70'
+      }`}
+    >
+      <input
+        type="radio"
+        name="regionalPreference"
+        value={value}
+        checked={selected}
+        onChange={onSelect}
+        className="sr-only"
+      />
+      <span
+        className={`w-5 h-5 rounded-full flex-none border-2 flex items-center justify-center transition-colors ${
+          selected ? 'border-weather-cloudy-900' : 'border-weather-cloudy-300'
+        }`}
+        aria-hidden="true"
+      >
+        {selected ? (
+          <span className="w-2.5 h-2.5 rounded-full bg-weather-cloudy-900" />
+        ) : null}
+      </span>
+      <span className="flex-1 min-w-0">
+        <span className="block font-medium text-weather-cloudy-900">{label}</span>
+        <span className="block text-xs text-weather-cloudy-700">{sublabel}</span>
+      </span>
+    </label>
   )
 }
 

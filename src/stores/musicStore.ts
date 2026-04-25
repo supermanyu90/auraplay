@@ -4,6 +4,7 @@ import { loadVideo, pause, play } from '../hooks/useYouTubePlayer'
 import { getRecommendations } from '../services/musicService'
 import { getQuotaUsed } from '../utils/quotaTracker'
 import type { MoodProfile, Track, WeatherCondition } from '../types'
+import { usePreferencesStore } from './preferencesStore'
 
 export type RepeatMode = 'off' | 'all' | 'one'
 
@@ -86,6 +87,7 @@ export const useMusicStore = create<MusicState>((set, get) => ({
     })
 
     try {
+      const regionalPreference = usePreferencesStore.getState().regionalPreference
       const result = await getRecommendations(mood, {
         onProgress: (msg) => set({ loadingMessage: msg }),
         onTrackFound: (track) => {
@@ -94,6 +96,7 @@ export const useMusicStore = create<MusicState>((set, get) => ({
             currentTrackIndex: s.currentTrackIndex == null ? 0 : s.currentTrackIndex,
           }))
         },
+        regionalPreference,
       })
 
       set((s) => ({
