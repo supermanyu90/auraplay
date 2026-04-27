@@ -53,7 +53,7 @@ export async function checkLastfm(): Promise<HealthResult> {
           api_key: LASTFM_API_KEY,
           format: 'json',
         },
-        timeout: 5000,
+        timeout: 10000,
       }),
     )
     return { status: 'ok', responseTimeMs: ms }
@@ -73,7 +73,7 @@ export async function checkYouTube(): Promise<HealthResult> {
           id: 'dQw4w9WgXcQ',
           key: YOUTUBE_API_KEY,
         },
-        timeout: 5000,
+        timeout: 10000,
       }),
     )
     return { status: 'ok', responseTimeMs: ms }
@@ -92,7 +92,7 @@ export async function checkJamendo(): Promise<HealthResult> {
           format: 'json',
           limit: 1,
         },
-        timeout: 5000,
+        timeout: 10000,
       }),
     )
     return { status: 'ok', responseTimeMs: ms }
@@ -104,7 +104,7 @@ export async function checkJamendo(): Promise<HealthResult> {
 export async function checkAudius(): Promise<HealthResult> {
   try {
     const { ms, value } = await timed(() =>
-      axios.get<{ data?: string[] }>(AUDIUS_HOST_DISCOVERY_URL, { timeout: 5000 }),
+      axios.get<{ data?: string[] }>(AUDIUS_HOST_DISCOVERY_URL, { timeout: 10000 }),
     )
     const nodes = value.data?.data ?? []
     if (nodes.length === 0) {

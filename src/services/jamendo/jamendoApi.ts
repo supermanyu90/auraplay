@@ -61,7 +61,7 @@ export async function getTracksByTag(tag: string, limit = 20): Promise<Track[]> 
         include: 'musicinfo',
         order: 'popularity_total',
       },
-      timeout: 8000,
+      timeout: 12000,
     })
     return (data.results ?? []).map(toTrack).filter((t): t is Track => t !== null)
   } catch (err) {
@@ -82,7 +82,7 @@ export async function searchTracks(query: string, limit = 20): Promise<Track[]> 
         include: 'musicinfo',
         order: 'popularity_total',
       },
-      timeout: 8000,
+      timeout: 12000,
     })
     return (data.results ?? []).map(toTrack).filter((t): t is Track => t !== null)
   } catch (err) {
