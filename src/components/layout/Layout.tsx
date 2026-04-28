@@ -14,6 +14,7 @@ import {
   useYouTubePlayer,
 } from '../../hooks/useYouTubePlayer'
 import { useMusicStore } from '../../stores/musicStore'
+import { addPlayed } from '../../utils/playedHistory'
 
 export default function Layout() {
   const [nowPlayingOpen, setNowPlayingOpen] = useState(false)
@@ -46,6 +47,14 @@ export default function Layout() {
   useEffect(() => {
     setIsPlaying(playerIsPlaying)
   }, [playerIsPlaying, setIsPlaying])
+
+  // Record played tracks once playback actually starts so future
+  // recommendations can avoid them.
+  useEffect(() => {
+    if (!playerIsPlaying || currentTrackIndex == null) return
+    const track = tracks[currentTrackIndex]
+    if (track) addPlayed(track)
+  }, [playerIsPlaying, currentTrackIndex, tracks])
 
   // Auto-expand NowPlaying when a track first becomes current. The user's
   // explicit minimize is remembered for the rest of the session (until tracks

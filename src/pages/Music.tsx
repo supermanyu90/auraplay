@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Shuffle } from 'lucide-react'
 import { TrackList } from '../components/music/TrackList'
 import { WeatherCard } from '../components/weather/WeatherCard'
 import { useMusicStore } from '../stores/musicStore'
@@ -53,6 +53,9 @@ export default function Music() {
   const handleRetry = () => {
     void fetchRecommendations(moodProfile)
   }
+  const handleShuffleNew = () => {
+    void fetchRecommendations(moodProfile, { refresh: true })
+  }
 
   return (
     <div className="py-8 md:py-12 space-y-6">
@@ -62,6 +65,19 @@ export default function Music() {
         <p className="text-center text-sm text-weather-cloudy-700 animate-pulse">
           {loadingMessage}
         </p>
+      ) : null}
+
+      {tracks.length > 0 && !isLoading ? (
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={handleShuffleNew}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/80 border border-weather-cloudy-100 text-sm font-medium text-weather-cloudy-900 hover:bg-white shadow-sm"
+          >
+            <Shuffle className="w-4 h-4" aria-hidden="true" />
+            Shuffle to new music
+          </button>
+        </div>
       ) : null}
 
       <TrackList

@@ -28,7 +28,7 @@ interface MusicState {
   lastCondition: WeatherCondition | null
   lastFetchedAt: number | null
 
-  fetchRecommendations: (mood: MoodProfile) => Promise<void>
+  fetchRecommendations: (mood: MoodProfile, opts?: { refresh?: boolean }) => Promise<void>
   playTrack: (index: number) => void
   nextTrack: () => void
   previousTrack: () => void
@@ -73,7 +73,7 @@ export const useMusicStore = create<MusicState>((set, get) => ({
   lastCondition: null,
   lastFetchedAt: null,
 
-  async fetchRecommendations(mood) {
+  async fetchRecommendations(mood, opts) {
     const state = get()
     if (state.isLoading) return
 
@@ -98,6 +98,7 @@ export const useMusicStore = create<MusicState>((set, get) => ({
         },
         regionalPreference: prefs.regionalPreference,
         source: prefs.musicSource,
+        refresh: opts?.refresh,
       })
 
       set((s) => ({

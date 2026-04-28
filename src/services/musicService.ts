@@ -12,6 +12,7 @@ import { searchBatch, searchYouTubeByKeywords } from './youtube/youtubeMusicApi'
 import { cacheGet, cacheGetStale, cacheSet } from '../utils/cache'
 import { deduplicateTracks } from '../utils/deduplication'
 import { applyRegionalPreference } from '../utils/moodMapper'
+import { getPlayedSet, isPlayed } from '../utils/playedHistory'
 import { getQuotaRemaining, getQuotaUsed, isQuotaExceeded } from '../utils/quotaTracker'
 import type {
   MoodProfile,
@@ -30,6 +31,39 @@ export interface GetRecommendationsOptions {
   onDurationResolved?: (videoId: string, durationMs: number) => void
   regionalPreference?: RegionalPreference
   source?: MusicSourcePreference
+  /**
+   * When true, bypass the cache and sample fresh tracks. Used by the
+   * "Shuffle to new music" UI affordance.
+   */
+  refresh?: boolean
+}
+
+const LASTFM_POOL_SIZE = 50
+const JAMENDO_POOL_SIZE = 30
+const AUDIUS_POOL_SIZE = 30
+
+function shuffleArray<T>(arr: T[]): T[] {
+  const out = arr.slice()
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[out[i], out[j]] = [out[j], out[i]]
+  }
+  return out
+}
+
+function filterAndSample<T extends { artist: string; title: string; id?: string }>(
+  pool: T[],
+  played: Set<string>,
+  limit: number,
+): T[] {
+  const unplayed = pool.filter((t) => {
+    if (t.id && played.has(t.id)) return false
+    return !isPlayed(played, t)
+  })
+  // If history filtered everything out, fall back to the full pool so the
+  // user still gets results — they've just heard a lot of this mood.
+  const candidates = unplayed.length >= Math.min(limit, 3) ? unplayed : pool
+  return shuffleArray(candidates).slice(0, limit)
 }
 
 interface RunResult {
@@ -54,24 +88,27 @@ async function runYouTube(
   limit: number = MAX_TRACKS,
 ): Promise<RunResult> {
   const onProgress = opts.onProgress ?? (() => {})
+  const played = getPlayedSet()
 
   onProgress('Finding matching songs...')
   let lastfmTracks: LastfmTrack[] = []
   let lastfmFailed = false
   try {
-    lastfmTracks = await getRecommendationsForMood(mood, 30)
+    lastfmTracks = await getRecommendationsForMood(mood, LASTFM_POOL_SIZE)
   } catch (err) {
     lastfmFailed = true
     const msg = err instanceof Error ? err.message : String(err)
     errors.push(`Last.fm unavailable: ${msg}`)
   }
 
-  const deduped = deduplicateTracks(lastfmTracks).slice(0, limit)
+  // Larger pool → filter recently-played → random sample → only YT-search those.
+  const pool = deduplicateTracks(lastfmTracks)
+  const sampled = filterAndSample(pool, played, limit)
   let tracks: Track[] = []
 
-  if (deduped.length > 0) {
+  if (sampled.length > 0) {
     onProgress('Searching YouTube...')
-    const result = await searchBatch(deduped, limit, {
+    const result = await searchBatch(sampled, limit, {
       onTrackFound: opts.onTrackFound,
       onDurationResolved: opts.onDurationResolved,
     })
@@ -83,7 +120,8 @@ async function runYouTube(
     onProgress('Searching YouTube by genre...')
     if (!lastfmFailed)
       errors.push('Last.fm returned no tracks; falling back to YouTube genre search.')
-    tracks = (await searchYouTubeByKeywords(mood.genres.slice(0, 2))).slice(0, limit)
+    const yt = await searchYouTubeByKeywords(mood.genres.slice(0, 2))
+    tracks = filterAndSample(yt, played, limit)
     emitTracks(tracks, opts.onTrackFound)
     if (tracks.length === 0) errors.push('YouTube genre search returned nothing.')
   }
@@ -104,7 +142,8 @@ async function runJamendo(
   }
   onProgress('Searching Jamendo (Creative Commons)...')
   try {
-    const tracks = await jamendo.getRecommendationsForMood(mood, limit)
+    const pool = await jamendo.getRecommendationsForMood(mood, JAMENDO_POOL_SIZE)
+    const tracks = filterAndSample(pool, getPlayedSet(), limit)
     emitTracks(tracks, opts.onTrackFound)
     if (tracks.length === 0) errors.push('Jamendo returned no tracks for this mood.')
     return { tracks, source: 'jamendo', errors }
@@ -124,7 +163,8 @@ async function runAudius(
   const onProgress = opts.onProgress ?? (() => {})
   onProgress('Searching Audius (decentralized)...')
   try {
-    const tracks = await audius.getRecommendationsForMood(mood, limit)
+    const pool = await audius.getRecommendationsForMood(mood, AUDIUS_POOL_SIZE)
+    const tracks = filterAndSample(pool, getPlayedSet(), limit)
     emitTracks(tracks, opts.onTrackFound)
     if (tracks.length === 0) errors.push('Audius returned no tracks for this mood.')
     return { tracks, source: 'audius', errors }
@@ -196,7 +236,7 @@ export async function getRecommendations(
 
   onProgress('Reading the weather...')
 
-  const fresh = cacheGet<Track[]>(cacheKey)
+  const fresh = !opts.refresh ? cacheGet<Track[]>(cacheKey) : null
   if (fresh && fresh.length > 0) {
     emitTracks(fresh, opts.onTrackFound)
     const q = quotaSnapshot()
