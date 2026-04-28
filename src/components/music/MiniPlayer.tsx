@@ -6,6 +6,7 @@ import {
   useYouTubePlayer,
 } from '../../hooks/useYouTubePlayer'
 import { useMusicStore } from '../../stores/musicStore'
+import { VolumeControl } from './VolumeControl'
 
 export interface MiniPlayerProps {
   onExpand: () => void
@@ -74,6 +75,8 @@ export function MiniPlayer({ onExpand }: MiniPlayerProps) {
                   <p className="text-xs text-weather-cloudy-700 truncate">{currentTrack.artist}</p>
                 </div>
               </div>
+
+              <VolumeControl />
 
               <button
                 type="button"

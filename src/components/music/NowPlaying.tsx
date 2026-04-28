@@ -8,16 +8,15 @@ import {
   Shuffle,
   SkipBack,
   SkipForward,
-  Volume2,
   X,
   Youtube,
 } from 'lucide-react'
+import { VolumeControl } from './VolumeControl'
 import type { MouseEvent } from 'react'
 import {
   pause as pausePlayer,
   play as playPlayer,
   seekTo as seekToPlayer,
-  setVolume as setPlayerVolume,
   useYouTubePlayer,
 } from '../../hooks/useYouTubePlayer'
 import { useMusicStore } from '../../stores/musicStore'
@@ -183,20 +182,8 @@ export function NowPlaying({ onClose }: NowPlayingProps) {
           </IconToggle>
         </div>
 
-        <div className="hidden md:flex items-center gap-3 mb-6">
-          <Volume2 className="w-4 h-4 text-weather-cloudy-700 flex-none" aria-hidden="true" />
-          <input
-            type="range"
-            min={0}
-            max={100}
-            value={player.volume}
-            onChange={(e) => setPlayerVolume(Number(e.target.value))}
-            className="flex-1 accent-weather-cloudy-900"
-            aria-label="Volume"
-          />
-          <span className="w-8 text-right text-xs text-weather-cloudy-700 tabular-nums">
-            {player.volume}
-          </span>
+        <div className="mb-6">
+          <VolumeControl layout="inline" />
         </div>
 
         <div className="flex flex-col items-center gap-2">

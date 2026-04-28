@@ -400,9 +400,12 @@ export function seekTo(seconds: number): void {
   usePlayerStore.getState()._setState({ currentTime: safe })
 }
 
+let lastNonZeroVolume = 100
+
 export function setVolume(level: number): void {
   const clamped = Math.max(0, Math.min(100, Math.round(level)))
   usePlayerStore.getState()._setState({ volume: clamped })
+  if (clamped > 0) lastNonZeroVolume = clamped
   if (activeBackend === 'youtube') {
     try {
       ytPlayer?.setVolume(clamped)
@@ -411,6 +414,15 @@ export function setVolume(level: number): void {
     }
   } else if (activeBackend === 'audio' && audioElement) {
     audioElement.volume = clamped / 100
+  }
+}
+
+export function toggleMute(): void {
+  const { volume } = usePlayerStore.getState()
+  if (volume > 0) {
+    setVolume(0)
+  } else {
+    setVolume(lastNonZeroVolume || 80)
   }
 }
 
