@@ -11,6 +11,7 @@ import {
   X,
   Youtube,
 } from 'lucide-react'
+import { ShareControl } from './ShareControl'
 import { VolumeControl } from './VolumeControl'
 import type { MouseEvent } from 'react'
 import {
@@ -20,6 +21,7 @@ import {
   useYouTubePlayer,
 } from '../../hooks/useYouTubePlayer'
 import { useMusicStore } from '../../stores/musicStore'
+import { useWeatherStore } from '../../stores/weatherStore'
 
 export interface NowPlayingProps {
   onClose: () => void
@@ -36,6 +38,7 @@ export function NowPlaying({ onClose }: NowPlayingProps) {
   const previousTrack = useMusicStore((s) => s.previousTrack)
 
   const player = useYouTubePlayer()
+  const moodProfile = useWeatherStore((s) => s.moodProfile)
   const currentTrack = currentTrackIndex != null ? tracks[currentTrackIndex] : null
   if (!currentTrack) return null
 
@@ -186,26 +189,45 @@ export function NowPlaying({ onClose }: NowPlayingProps) {
           <VolumeControl layout="inline" />
         </div>
 
-        <div className="flex flex-col items-center gap-2">
-          <a
-            href={currentTrack.youtubeMusicUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#FF0000]/90 text-white text-sm font-medium hover:bg-[#FF0000] transition-colors"
-          >
-            <Youtube className="w-4 h-4" aria-hidden="true" />
-            Open in YouTube Music
-          </a>
-          <a
-            href={currentTrack.youtubeUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-xs text-weather-cloudy-700 hover:text-weather-cloudy-900 underline underline-offset-2"
-          >
-            Open in YouTube
-            <ExternalLink className="w-3 h-3" aria-hidden="true" />
-          </a>
-          <p className="text-[11px] text-weather-cloudy-700/70 mt-3">Discovered via Last.fm</p>
+        <div className="flex flex-col items-center gap-3">
+          <div className="flex items-center gap-2 flex-wrap justify-center">
+            {currentTrack.service === 'youtube' && currentTrack.youtubeMusicUrl ? (
+              <a
+                href={currentTrack.youtubeMusicUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#FF0000]/90 text-white text-sm font-medium hover:bg-[#FF0000] transition-colors"
+              >
+                <Youtube className="w-4 h-4" aria-hidden="true" />
+                Open in YouTube Music
+              </a>
+            ) : (
+              <a
+                href={currentTrack.externalUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-weather-cloudy-900 text-white text-sm font-medium hover:scale-[1.02] transition-transform"
+              >
+                <ExternalLink className="w-4 h-4" aria-hidden="true" />
+                Open on {currentTrack.service}
+              </a>
+            )}
+            <ShareControl track={currentTrack} mood={moodProfile} />
+          </div>
+          {currentTrack.service === 'youtube' && currentTrack.youtubeUrl ? (
+            <a
+              href={currentTrack.youtubeUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-xs text-weather-cloudy-700 hover:text-weather-cloudy-900 underline underline-offset-2"
+            >
+              Open in YouTube
+              <ExternalLink className="w-3 h-3" aria-hidden="true" />
+            </a>
+          ) : null}
+          <p className="text-[11px] text-weather-cloudy-700/70 mt-1">
+            Discovered via Last.fm · Played via {currentTrack.service}
+          </p>
         </div>
       </motion.article>
     </motion.div>
