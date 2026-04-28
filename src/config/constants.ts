@@ -18,4 +18,10 @@ export const AUDIUS_APP_NAME = 'AuraPlay'
 
 export const YOUTUBE_DAILY_SEARCH_LIMIT = 100
 export const CACHE_DURATION_MS = 30 * 60 * 1000
-export const MAX_TRACKS = 5
+export const MAX_TRACKS = 10
+
+export const SHUFFLE_CAPS = {
+  youtube: 2,
+  jamendo: 4,
+  audius: 6,
+} as const

@@ -1,4 +1,9 @@
-import { CACHE_DURATION_MS, JAMENDO_CLIENT_ID, MAX_TRACKS } from '../config/constants'
+import {
+  CACHE_DURATION_MS,
+  JAMENDO_CLIENT_ID,
+  MAX_TRACKS,
+  SHUFFLE_CAPS,
+} from '../config/constants'
 import * as audius from './audius/audiusApi'
 import * as jamendo from './jamendo/jamendoApi'
 import type { LastfmTrack } from './lastfm/lastfmApi'
@@ -46,6 +51,7 @@ async function runYouTube(
   mood: MoodProfile,
   opts: GetRecommendationsOptions,
   errors: string[],
+  limit: number = MAX_TRACKS,
 ): Promise<RunResult> {
   const onProgress = opts.onProgress ?? (() => {})
 
@@ -60,12 +66,12 @@ async function runYouTube(
     errors.push(`Last.fm unavailable: ${msg}`)
   }
 
-  const deduped = deduplicateTracks(lastfmTracks).slice(0, MAX_TRACKS)
+  const deduped = deduplicateTracks(lastfmTracks).slice(0, limit)
   let tracks: Track[] = []
 
   if (deduped.length > 0) {
     onProgress('Searching YouTube...')
-    const result = await searchBatch(deduped, MAX_TRACKS, {
+    const result = await searchBatch(deduped, limit, {
       onTrackFound: opts.onTrackFound,
       onDurationResolved: opts.onDurationResolved,
     })
@@ -77,7 +83,7 @@ async function runYouTube(
     onProgress('Searching YouTube by genre...')
     if (!lastfmFailed)
       errors.push('Last.fm returned no tracks; falling back to YouTube genre search.')
-    tracks = await searchYouTubeByKeywords(mood.genres.slice(0, 2))
+    tracks = (await searchYouTubeByKeywords(mood.genres.slice(0, 2))).slice(0, limit)
     emitTracks(tracks, opts.onTrackFound)
     if (tracks.length === 0) errors.push('YouTube genre search returned nothing.')
   }
@@ -89,6 +95,7 @@ async function runJamendo(
   mood: MoodProfile,
   opts: GetRecommendationsOptions,
   errors: string[],
+  limit: number = MAX_TRACKS,
 ): Promise<RunResult> {
   const onProgress = opts.onProgress ?? (() => {})
   if (!JAMENDO_CLIENT_ID) {
@@ -97,7 +104,7 @@ async function runJamendo(
   }
   onProgress('Searching Jamendo (Creative Commons)...')
   try {
-    const tracks = await jamendo.getRecommendationsForMood(mood, MAX_TRACKS)
+    const tracks = await jamendo.getRecommendationsForMood(mood, limit)
     emitTracks(tracks, opts.onTrackFound)
     if (tracks.length === 0) errors.push('Jamendo returned no tracks for this mood.')
     return { tracks, source: 'jamendo', errors }
@@ -112,11 +119,12 @@ async function runAudius(
   mood: MoodProfile,
   opts: GetRecommendationsOptions,
   errors: string[],
+  limit: number = MAX_TRACKS,
 ): Promise<RunResult> {
   const onProgress = opts.onProgress ?? (() => {})
   onProgress('Searching Audius (decentralized)...')
   try {
-    const tracks = await audius.getRecommendationsForMood(mood, MAX_TRACKS)
+    const tracks = await audius.getRecommendationsForMood(mood, limit)
     emitTracks(tracks, opts.onTrackFound)
     if (tracks.length === 0) errors.push('Audius returned no tracks for this mood.')
     return { tracks, source: 'audius', errors }
@@ -127,24 +135,52 @@ async function runAudius(
   }
 }
 
+function shuffleInPlace<T>(arr: T[]): T[] {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[arr[i], arr[j]] = [arr[j], arr[i]]
+  }
+  return arr
+}
+
 async function runAuto(
   mood: MoodProfile,
   opts: GetRecommendationsOptions,
   errors: string[],
 ): Promise<RunResult> {
+  const onProgress = opts.onProgress ?? (() => {})
+  // Suppress per-source progress + per-track streaming so we can emit a
+  // single shuffled batch when all three backends settle.
+  const innerOpts: GetRecommendationsOptions = {
+    onProgress: () => {},
+    regionalPreference: opts.regionalPreference,
+    source: opts.source,
+  }
+
+  onProgress('Mixing all sources…')
+
+  const tasks: Array<Promise<RunResult>> = []
   if (!isQuotaExceeded()) {
-    const yt = await runYouTube(mood, opts, errors)
-    if (yt.tracks.length > 0) return yt
+    tasks.push(runYouTube(mood, innerOpts, errors, SHUFFLE_CAPS.youtube))
   } else {
-    errors.push('YouTube daily quota exhausted; trying alternative sources.')
+    errors.push('YouTube daily quota exhausted; mix will use Jamendo + Audius only.')
   }
-
   if (JAMENDO_CLIENT_ID) {
-    const j = await runJamendo(mood, opts, errors)
-    if (j.tracks.length > 0) return j
+    tasks.push(runJamendo(mood, innerOpts, errors, SHUFFLE_CAPS.jamendo))
+  }
+  tasks.push(runAudius(mood, innerOpts, errors, SHUFFLE_CAPS.audius))
+
+  const settled = await Promise.allSettled(tasks)
+  const combined: Track[] = []
+  for (const r of settled) {
+    if (r.status === 'fulfilled') combined.push(...r.value.tracks)
   }
 
-  return runAudius(mood, opts, errors)
+  const finalTracks = shuffleInPlace(combined).slice(0, MAX_TRACKS)
+  emitTracks(finalTracks, opts.onTrackFound)
+  if (finalTracks.length === 0) errors.push('All three sources returned nothing.')
+
+  return { tracks: finalTracks, source: 'lastfm+youtube', errors }
 }
 
 export async function getRecommendations(
