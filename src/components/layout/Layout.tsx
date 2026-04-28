@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Outlet } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
 import Header from './Header'
@@ -17,6 +17,7 @@ import { useMusicStore } from '../../stores/musicStore'
 
 export default function Layout() {
   const [nowPlayingOpen, setNowPlayingOpen] = useState(false)
+  const userMinimizedRef = useRef(false)
 
   const tracks = useMusicStore((s) => s.tracks)
   const currentTrackIndex = useMusicStore((s) => s.currentTrackIndex)
@@ -46,6 +47,28 @@ export default function Layout() {
     setIsPlaying(playerIsPlaying)
   }, [playerIsPlaying, setIsPlaying])
 
+  // Auto-expand NowPlaying when a track first becomes current. The user's
+  // explicit minimize is remembered for the rest of the session (until tracks
+  // are cleared, e.g. by picking a new mood) so auto-advance doesn't pop the
+  // modal back open.
+  useEffect(() => {
+    if (currentTrackIndex == null) {
+      userMinimizedRef.current = false
+      setNowPlayingOpen(false)
+      return
+    }
+    if (!userMinimizedRef.current) setNowPlayingOpen(true)
+  }, [currentTrackIndex])
+
+  const handleMinimize = () => {
+    userMinimizedRef.current = true
+    setNowPlayingOpen(false)
+  }
+  const handleExpand = () => {
+    userMinimizedRef.current = false
+    setNowPlayingOpen(true)
+  }
+
   return (
     <div className="min-h-screen flex flex-col">
       <WeatherBackground />
@@ -54,9 +77,9 @@ export default function Layout() {
         <Outlet />
       </main>
       <MobileNav />
-      <MiniPlayer onExpand={() => setNowPlayingOpen(true)} />
+      <MiniPlayer onExpand={handleExpand} />
       <AnimatePresence>
-        {nowPlayingOpen ? <NowPlaying onClose={() => setNowPlayingOpen(false)} /> : null}
+        {nowPlayingOpen ? <NowPlaying onClose={handleMinimize} /> : null}
       </AnimatePresence>
       <PlayerHost />
     </div>
