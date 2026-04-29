@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { Radio } from 'lucide-react'
+import { HowItWorks } from '../components/onboarding/HowItWorks'
 import { useWeatherStore } from '../stores/weatherStore'
 import { MOOD_ORDER, getMoodForCondition } from '../utils/moodMapper'
 import type { WeatherCondition } from '../types'
@@ -87,6 +88,8 @@ export default function Home() {
           })}
         </ul>
       </section>
+
+      <HowItWorks />
     </div>
   )
 }
