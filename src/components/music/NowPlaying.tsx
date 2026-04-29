@@ -14,12 +14,7 @@ import {
 import { ShareControl } from './ShareControl'
 import { VolumeControl } from './VolumeControl'
 import type { MouseEvent } from 'react'
-import {
-  pause as pausePlayer,
-  play as playPlayer,
-  seekTo as seekToPlayer,
-  useYouTubePlayer,
-} from '../../hooks/useYouTubePlayer'
+import { seekTo as seekToPlayer, useYouTubePlayer } from '../../hooks/useYouTubePlayer'
 import { useMusicStore } from '../../stores/musicStore'
 import { useWeatherStore } from '../../stores/weatherStore'
 
@@ -36,6 +31,7 @@ export function NowPlaying({ onClose }: NowPlayingProps) {
   const cycleRepeat = useMusicStore((s) => s.cycleRepeat)
   const nextTrack = useMusicStore((s) => s.nextTrack)
   const previousTrack = useMusicStore((s) => s.previousTrack)
+  const togglePlayPause = useMusicStore((s) => s.togglePlayPause)
 
   const player = useYouTubePlayer()
   const moodProfile = useWeatherStore((s) => s.moodProfile)
@@ -152,7 +148,7 @@ export function NowPlaying({ onClose }: NowPlayingProps) {
           </IconButton>
           <button
             type="button"
-            onClick={() => (player.isPlaying ? pausePlayer() : playPlayer())}
+            onClick={togglePlayPause}
             disabled={!player.isReady}
             aria-label={player.isPlaying ? 'Pause' : 'Play'}
             className="w-16 h-16 rounded-full bg-weather-cloudy-900 text-white shadow-lg flex items-center justify-center disabled:opacity-40 hover:scale-[1.04] active:scale-[0.97] transition-transform"

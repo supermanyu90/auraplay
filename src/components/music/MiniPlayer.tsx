@@ -1,10 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { Pause, Play, SkipForward } from 'lucide-react'
-import {
-  pause as pausePlayer,
-  play as playPlayer,
-  useYouTubePlayer,
-} from '../../hooks/useYouTubePlayer'
+import { useYouTubePlayer } from '../../hooks/useYouTubePlayer'
 import { useMusicStore } from '../../stores/musicStore'
 import { VolumeControl } from './VolumeControl'
 
@@ -16,6 +12,7 @@ export function MiniPlayer({ onExpand }: MiniPlayerProps) {
   const tracks = useMusicStore((s) => s.tracks)
   const currentTrackIndex = useMusicStore((s) => s.currentTrackIndex)
   const nextTrack = useMusicStore((s) => s.nextTrack)
+  const togglePlayPause = useMusicStore((s) => s.togglePlayPause)
   const player = useYouTubePlayer()
 
   const currentTrack = currentTrackIndex != null ? tracks[currentTrackIndex] : null
@@ -82,8 +79,7 @@ export function MiniPlayer({ onExpand }: MiniPlayerProps) {
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation()
-                  if (player.isPlaying) pausePlayer()
-                  else playPlayer()
+                  togglePlayPause()
                 }}
                 disabled={!player.isReady}
                 aria-label={player.isPlaying ? 'Pause' : 'Play'}

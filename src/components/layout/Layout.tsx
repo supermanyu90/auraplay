@@ -4,6 +4,7 @@ import { AnimatePresence } from 'framer-motion'
 import Header from './Header'
 import MobileNav from './MobileNav'
 import WeatherBackground from './WeatherBackground'
+import { AuthGateModal } from '../auth/AuthGateModal'
 import { MiniPlayer } from '../music/MiniPlayer'
 import { NowPlaying } from '../music/NowPlaying'
 import { PlayerHost } from '../music/PlayerHost'
@@ -13,6 +14,7 @@ import {
   setOnTrackEnded,
   useYouTubePlayer,
 } from '../../hooks/useYouTubePlayer'
+import { useAuthStore } from '../../stores/authStore'
 import { useMusicStore } from '../../stores/musicStore'
 import { addPlayed } from '../../utils/playedHistory'
 
@@ -24,6 +26,9 @@ export default function Layout() {
   const currentTrackIndex = useMusicStore((s) => s.currentTrackIndex)
   const nextTrack = useMusicStore((s) => s.nextTrack)
   const setIsPlaying = useMusicStore((s) => s.setIsPlaying)
+  const authGateOpen = useMusicStore((s) => s.authGateOpen)
+  const tryResumePending = useMusicStore((s) => s.tryResumePending)
+  const user = useAuthStore((s) => s.user)
 
   const { isReady, videoId, isPlaying: playerIsPlaying } = useYouTubePlayer()
 
@@ -55,6 +60,12 @@ export default function Layout() {
     const track = tracks[currentTrackIndex]
     if (track) addPlayed(track)
   }, [playerIsPlaying, currentTrackIndex, tracks])
+
+  // Once the user signs in, resume whatever play action triggered the
+  // auth gate.
+  useEffect(() => {
+    if (user && authGateOpen) tryResumePending()
+  }, [user, authGateOpen, tryResumePending])
 
   // Auto-expand NowPlaying when a track first becomes current. The user's
   // explicit minimize is remembered for the rest of the session (until tracks
@@ -90,6 +101,7 @@ export default function Layout() {
       <AnimatePresence>
         {nowPlayingOpen ? <NowPlaying onClose={handleMinimize} /> : null}
       </AnimatePresence>
+      <AnimatePresence>{authGateOpen ? <AuthGateModal /> : null}</AnimatePresence>
       <PlayerHost />
     </div>
   )

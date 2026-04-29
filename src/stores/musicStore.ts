@@ -4,6 +4,7 @@ import { loadTrack, pause, play } from '../hooks/useYouTubePlayer'
 import { getRecommendations } from '../services/musicService'
 import { getQuotaUsed } from '../utils/quotaTracker'
 import type { MoodProfile, Track, WeatherCondition } from '../types'
+import { useAuthStore } from './authStore'
 import { usePreferencesStore } from './preferencesStore'
 
 export type RepeatMode = 'off' | 'all' | 'one'
@@ -28,6 +29,9 @@ interface MusicState {
   lastCondition: WeatherCondition | null
   lastFetchedAt: number | null
 
+  authGateOpen: boolean
+  pendingPlayIndex: number | null
+
   fetchRecommendations: (mood: MoodProfile, opts?: { refresh?: boolean }) => Promise<void>
   playTrack: (index: number) => void
   nextTrack: () => void
@@ -39,6 +43,13 @@ interface MusicState {
   appendTrack: (track: Track) => void
   setTrackDuration: (videoId: string, duration: number) => void
   clearTracks: () => void
+  closeAuthGate: () => void
+  tryResumePending: () => void
+}
+
+function authBlocks(): boolean {
+  const auth = useAuthStore.getState()
+  return auth.enabled && !auth.user
 }
 
 function toMessage(err: unknown): string {
@@ -72,6 +83,9 @@ export const useMusicStore = create<MusicState>((set, get) => ({
 
   lastCondition: null,
   lastFetchedAt: null,
+
+  authGateOpen: false,
+  pendingPlayIndex: null,
 
   async fetchRecommendations(mood, opts) {
     const state = get()
@@ -126,6 +140,10 @@ export const useMusicStore = create<MusicState>((set, get) => ({
   playTrack(index) {
     const { tracks } = get()
     if (index < 0 || index >= tracks.length) return
+    if (authBlocks()) {
+      set({ authGateOpen: true, pendingPlayIndex: index })
+      return
+    }
     const track = tracks[index]
     set({ currentTrackIndex: index, isPlaying: true })
     loadTrack(track)
@@ -168,9 +186,16 @@ export const useMusicStore = create<MusicState>((set, get) => ({
   },
 
   togglePlayPause() {
-    const { isPlaying } = get()
-    if (isPlaying) pause()
-    else play()
+    const { isPlaying, currentTrackIndex } = get()
+    if (isPlaying) {
+      pause()
+      return
+    }
+    if (authBlocks()) {
+      set({ authGateOpen: true, pendingPlayIndex: currentTrackIndex })
+      return
+    }
+    play()
   },
 
   setIsPlaying(isPlaying) {
@@ -210,5 +235,22 @@ export const useMusicStore = create<MusicState>((set, get) => ({
       lastCondition: null,
       lastFetchedAt: null,
     })
+  },
+
+  closeAuthGate() {
+    set({ authGateOpen: false, pendingPlayIndex: null })
+  },
+
+  tryResumePending() {
+    const { pendingPlayIndex, tracks, currentTrackIndex } = get()
+    set({ authGateOpen: false, pendingPlayIndex: null })
+    if (pendingPlayIndex == null) return
+    if (pendingPlayIndex < 0 || pendingPlayIndex >= tracks.length) return
+    if (pendingPlayIndex !== currentTrackIndex) {
+      const track = tracks[pendingPlayIndex]
+      set({ currentTrackIndex: pendingPlayIndex, isPlaying: true })
+      loadTrack(track)
+    }
+    play()
   },
 }))
