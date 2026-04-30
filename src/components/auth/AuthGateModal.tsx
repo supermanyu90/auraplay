@@ -4,7 +4,6 @@ import { Check, Music, X } from 'lucide-react'
 import { useAuthStore } from '../../stores/authStore'
 import { useMusicStore } from '../../stores/musicStore'
 import { LoginForm } from './LoginForm'
-import { OAuthButtons } from './OAuthButtons'
 import { SignupForm } from './SignupForm'
 
 type Mode = 'signin' | 'signup'
@@ -91,14 +90,6 @@ export function AuthGateModal() {
         <div className="flex gap-1 p-1 rounded-full bg-weather-cloudy-100 mb-5" role="tablist">
           <Tab selected={mode === 'signin'} onClick={() => setMode('signin')} label="Sign in" />
           <Tab selected={mode === 'signup'} onClick={() => setMode('signup')} label="Sign up" />
-        </div>
-
-        <OAuthButtons />
-
-        <div className="flex items-center gap-3 my-4" aria-hidden="true">
-          <span className="flex-1 h-px bg-weather-cloudy-100" />
-          <span className="text-xs text-weather-cloudy-700 uppercase tracking-wider">or</span>
-          <span className="flex-1 h-px bg-weather-cloudy-100" />
         </div>
 
         {mode === 'signin' ? <LoginForm /> : <SignupForm />}

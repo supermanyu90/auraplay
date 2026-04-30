@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Info } from 'lucide-react'
 import { LoginForm } from '../components/auth/LoginForm'
-import { OAuthButtons } from '../components/auth/OAuthButtons'
 import { SignupForm } from '../components/auth/SignupForm'
 import { useAuthStore } from '../stores/authStore'
 
@@ -62,14 +61,6 @@ export default function Auth() {
             ? 'Sign in to save your listening history.'
             : 'Free forever — no subscription needed.'}
         </p>
-
-        <OAuthButtons />
-
-        <div className="flex items-center gap-3 my-5" aria-hidden="true">
-          <span className="flex-1 h-px bg-weather-cloudy-100" />
-          <span className="text-xs text-weather-cloudy-700 uppercase tracking-wider">or</span>
-          <span className="flex-1 h-px bg-weather-cloudy-100" />
-        </div>
 
         {mode === 'signin' ? (
           <LoginForm onSuccess={() => navigate('/profile')} />
